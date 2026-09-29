@@ -12,8 +12,21 @@ mutable struct PoissonMargin <: AbstractMargin
 end
 
 function PoissonMargin(y_j::AbstractVector, K::Int; 
-                       a_0=2.0, b_0=nothing)
-    lambda_bg = mean(y_j)
+                       a_0=2.0, b_0=nothing, robust::Bool=true)
+    if robust
+        med = Float64(median(y_j))
+        if med > 0
+            lambda_bg = max(0.1, med)
+        else
+            # 10% trimmed mean fallback when median is zero
+            s_y = sort(y_j)
+            trim_idx = max(1, round(Int, 0.1 * length(y_j)))
+            trimmed_val = mean(s_y[trim_idx:end])
+            lambda_bg = max(0.1, Float64(trimmed_val))
+        end
+    else
+        lambda_bg = mean(y_j)
+    end
     
     prior_b_0 = isnothing(b_0) ? a_0 / max(lambda_bg, 1e-5) : b_0
     
@@ -127,5 +140,20 @@ function update_background!(margin::PoissonMargin, y_j::AbstractVector, gamma_j:
         margin.lambda_bg = max(sum_wy / sum_w, 1e-10)
     end
 end
+
+function hellinger_divergence(margin::PoissonMargin)
+    K = length(margin.a_star)
+    h2 = Vector{Float64}(undef, K)
+    lambda0 = max(margin.lambda_bg, 1e-15)
+    sqrt_lambda0 = sqrt(lambda0)
+    for k in 1:K
+        lambdak = max(margin.a_star[k] / margin.b_star[k], 1e-15)
+        bc = exp(-0.5 * (sqrt(lambdak) - sqrt_lambda0)^2)
+        bc = clamp(bc, 0.0, 1.0)
+        h2[k] = clamp(1.0 - bc, 0.0, 1.0)
+    end
+    return h2
+end
+
 
 

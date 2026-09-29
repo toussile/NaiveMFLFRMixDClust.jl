@@ -16,13 +16,21 @@ mutable struct GammaMargin <: AbstractMargin
 end
 
 function GammaMargin(y_j::AbstractVector, K::Int; 
-                     alpha_0=3.0, beta_0=nothing)
-    mu_bg = mean(y_j)
-    var_bg = var(y_j)
-    
-    # Method of moments estimates for Gamma background
-    a_bg = var_bg > 0 ? (mu_bg^2) / var_bg : 1.0
-    b_bg = var_bg > 0 ? mu_bg / var_bg : 1.0
+                     alpha_0=3.0, beta_0=nothing, robust::Bool=true)
+    if robust
+        med = Float64(median(y_j))
+        mad_val = 1.4826 * Float64(median(abs.(y_j .- med)))
+        sigma_bg = mad_val > 1e-6 ? mad_val : (std(y_j) > 1e-6 ? Float64(std(y_j)) : 1.0)
+        mu_bg = max(med, 1e-4)
+        var_bg = sigma_bg^2
+        a_bg = max((mu_bg / sigma_bg)^2, 1e-3)
+        b_bg = max(mu_bg / var_bg, 1e-4)
+    else
+        mu_bg = mean(y_j)
+        var_bg = var(y_j)
+        a_bg = var_bg > 0 ? (mu_bg^2) / var_bg : 1.0
+        b_bg = var_bg > 0 ? mu_bg / var_bg : 1.0
+    end
     
     # Cluster shape parameter is fixed and equal to background shape
     a_cl = a_bg
@@ -167,5 +175,25 @@ function update_background!(margin::GammaMargin, y_j::AbstractVector, gamma_j::A
         margin.b_bg = var_bg > 1e-10 ? mu_bg / var_bg : 1.0
     end
 end
+
+function hellinger_divergence(margin::GammaMargin)
+    K = length(margin.alpha_star)
+    h2 = Vector{Float64}(undef, K)
+    a_cl = margin.a_cl
+    a_bg = margin.a_bg
+    b_bg = max(margin.b_bg, 1e-15)
+    
+    half_a_sum = 0.5 * (a_cl + a_bg)
+    log_gamma_term = loggamma(half_a_sum) - 0.5 * (loggamma(a_cl) + loggamma(a_bg))
+    
+    for k in 1:K
+        bk = max(margin.alpha_star[k] / margin.beta_star[k], 1e-15)
+        log_bc = log_gamma_term + 0.5 * a_cl * log(bk) + 0.5 * a_bg * log(b_bg) - half_a_sum * log(0.5 * (bk + b_bg))
+        bc = clamp(exp(log_bc), 0.0, 1.0)
+        h2[k] = clamp(1.0 - bc, 0.0, 1.0)
+    end
+    return h2
+end
+
 
 

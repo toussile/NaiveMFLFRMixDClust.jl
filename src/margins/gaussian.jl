@@ -17,10 +17,20 @@ mutable struct GaussianMargin <: AbstractMargin
 end
 
 function GaussianMargin(y_j::AbstractVector, K::Int; 
-                        mu_0=nothing, kappa_0=0.05, a_0=3.0, b_0=nothing)
-    mu_bg = mean(y_j)
-    var_bg = var(y_j)
-    tau_bg = var_bg > 0 ? 1.0 / var_bg : 1.0
+                        mu_0=nothing, kappa_0=0.05, a_0=3.0, b_0=nothing,
+                        robust::Bool=true)
+    if robust
+        med = Float64(median(y_j))
+        mad_val = 1.4826 * Float64(median(abs.(y_j .- med)))
+        sigma_bg = mad_val > 1e-6 ? mad_val : (std(y_j) > 1e-6 ? Float64(std(y_j)) : 1.0)
+        mu_bg = med
+        var_bg = sigma_bg^2
+        tau_bg = 1.0 / var_bg
+    else
+        mu_bg = mean(y_j)
+        var_bg = var(y_j)
+        tau_bg = var_bg > 0 ? 1.0 / var_bg : 1.0
+    end
     
     prior_mu_0 = isnothing(mu_0) ? mu_bg : mu_0
     prior_b_0 = isnothing(b_0) ? a_0 * max(var_bg, 1e-5) : b_0
@@ -162,4 +172,23 @@ function update_background!(margin::GaussianMargin, y_j::AbstractVector, gamma_j
         margin.tau_bg = tau_bg
     end
 end
+
+function hellinger_divergence(margin::GaussianMargin)
+    K = length(margin.mu_star)
+    h2 = zeros(Float64, K)
+    tau_0 = max(margin.tau_bg, 1e-10)
+    mu_0 = margin.mu_bg
+
+    for k in 1:K
+        tau_k = max(margin.a_star[k] / margin.b_star[k], 1e-10)
+        mu_k = margin.mu_star[k]
+
+        ratio = (4.0 * tau_k * tau_0) / ((tau_k + tau_0)^2)
+        exponent = -0.25 * (tau_k * tau_0 * (mu_k - mu_0)^2) / (tau_k + tau_0)
+        bc = (ratio^0.25) * exp(exponent)
+        h2[k] = clamp(1.0 - bc, 0.0, 1.0)
+    end
+    return h2
+end
+
 

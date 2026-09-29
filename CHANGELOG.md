@@ -1,9 +1,38 @@
 # Changelog
 
-All notable changes to MixClustVIjl are documented here.
+All notable changes to NaiveMFLFRMixDClust (formerly MixClustVIjl) are documented here.
 Versioning follows [Semantic Versioning](https://semver.org):
 `MAJOR.MINOR.PATCH` — breaking changes bump MAJOR (or MINOR while pre-1.0),
 new features bump MINOR, bug fixes bump PATCH.
+
+---
+
+## [0.3.0] — 2026-09-29
+
+### Breaking changes
+
+- **Package renamed from `MixClustVIjl` to `NaiveMFLFRMixDClust`** (repository
+  `toussile/NaiveMFLFRMixDClust.jl`) to match the accompanying paper. Replace
+  `using MixClustVIjl` with `using NaiveMFLFRMixDClust`. The package UUID is unchanged.
+- **`prune_and_merge_clusters` replaced by `compact_clusters`**. `mixClust` now
+  compacts empty components by default (`compact=true`).
+- **`MixClustResult` gains an `omega_history` field** (T × K trajectory of
+  E_q[ω_k]). A backward-compatible constructor without it is provided.
+
+### New features
+
+- New margins: `BernoulliMargin`, `LogNormalMargin`, `ExponentialMargin`.
+- Expected Hellinger Distance: `compute_ehd`, `compute_local_ehd`, `hellinger_divergence`.
+- Background-component diagnostics: `compute_pi_0`, `coordinate_inactivation_rate`,
+  `detect_outliers`, `robust_cluster_assignments`, `outlier_indices`, `cluster_indices`,
+  and the result properties `inactivation_rate` and `pi_0`.
+- `n_active_clusters`, `adjusted_rand_index`.
+- Multi-start initialisation (`n_init`, `max_iter_init`) and explicit
+  `feature_types` in `mixClust`.
+- New plots: `plot_ehd`, `plot_local_ehd`, `plot_local_eig`,
+  `plot_mixing_weights_evolution`, `plot_omega_history`.
+- `experiments/`: simulation suite, real-data scripts and tutorials reproducing
+  the results of the paper.
 
 ---
 

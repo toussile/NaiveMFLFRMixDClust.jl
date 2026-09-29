@@ -34,8 +34,7 @@ results = mixClust(hd.data, 10;
                    model_setting = SFRM(),
                    u0            = 0.01,
                    max_iter      = 2000,
-                   tol           = 1e-5,
-                   prune         = true)
+                   tol           = 1e-5)
 eig    = compute_eig(results.margins, results.w, results.pip)
 active = filter_features(eig, 0.10)
 println("Active features: ", hd.feature_names[active])
@@ -48,7 +47,10 @@ Janosi, A., Steinbrunn, W., Pfisterer, M., & Detrano, R. (1988).
 <https://doi.org/10.24432/C52P4X>
 """
 function load_heart_disease()
-    path = joinpath(pkgdir(MixClustVIjl), "data", "uci_heart_disease.csv")
+    path = joinpath(pkgdir(NaiveMFLFRMixDClust), "data", "uci_heart_disease.csv")
+    if !isfile(path)
+        path = joinpath(pkgdir(NaiveMFLFRMixDClust), "experiments", "data", "uci_heart_disease.csv")
+    end
     raw, _ = readdlm(path, ',', header = true)
     n = size(raw, 1)
 
@@ -123,7 +125,6 @@ results = mixClust(cohort.data, 10;
                    u0            = 0.01,
                    max_iter      = 500,
                    tol           = 1e-4,
-                   prune         = true,
                    n_init        = 10,
                    max_iter_init = 10)
 

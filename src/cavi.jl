@@ -7,10 +7,10 @@ end
 
 # ── Input validation ──────────────────────────────────────────────────────────
 
-const _VALID_MARGIN_TYPES = (:gaussian, :poisson, :gamma, :multinomial)
+const _VALID_MARGIN_TYPES = (:gaussian, :lognormal, :exponential, :bernoulli, :poisson, :gamma, :multinomial)
 
 function _validate_input(data, K, u0, tol, delta_prior,
-                         size_threshold, merge_threshold, beta_estimation,
+                         beta_estimation,
                          n_init, max_iter_init, max_iter,
                          user_feature_types, resolved_types)
     p = length(data)
@@ -55,14 +55,10 @@ function _validate_input(data, K, u0, tol, delta_prior,
     d1 > 0 || throw(ArgumentError("delta_prior[1] (δ₁) must be > 0 (got $d1)."))
     d0 > 0 || throw(ArgumentError("delta_prior[2] (δ₀) must be > 0 (got $d0)."))
 
-    (0 < size_threshold < 1) || throw(ArgumentError(
-        "size_threshold must be in (0, 1) (got $size_threshold)."))
-    (0 < merge_threshold < 1) || throw(ArgumentError(
-        "merge_threshold must be in (0, 1) (got $merge_threshold)."))
-
     beta_estimation in (:two_stage, :iterative) || throw(ArgumentError(
         "beta_estimation must be :two_stage or :iterative (got :$beta_estimation). " *
         "Did you mean :two_stage?"))
+
 
     n_init >= 1     || throw(ArgumentError("n_init must be ≥ 1 (got $n_init)."))
     max_iter_init >= 1 || throw(ArgumentError("max_iter_init must be ≥ 1 (got $max_iter_init)."))
@@ -76,7 +72,7 @@ function _validate_input(data, K, u0, tol, delta_prior,
             isnothing(ft) && continue
             ft in _VALID_MARGIN_TYPES || throw(ArgumentError(
                 "feature_types[$j] = :$ft is not a recognised margin type. " *
-                "Choose from: :gaussian, :poisson, :gamma, :multinomial."))
+                "Choose from: :gaussian, :lognormal, :exponential, :bernoulli, :poisson, :gamma, :multinomial."))
         end
     end
 
@@ -85,10 +81,16 @@ function _validate_input(data, K, u0, tol, delta_prior,
         ft  = resolved_types[j]
         y_j = data[j]
 
-        if ft === :gamma
+        if ft === :gamma || ft === :lognormal
             any(x -> x <= 0, y_j) && throw(ArgumentError(
-                "Feature $j is assigned a Gamma margin (requires strictly positive values) " *
+                "Feature $j is assigned a :$ft margin (requires strictly positive values) " *
                 "but contains values ≤ 0 (minimum = $(minimum(y_j))). " *
+                "Fix the data or override with feature_types[$j] = :gaussian."))
+
+        elseif ft === :exponential
+            any(x -> x < 0, y_j) && throw(ArgumentError(
+                "Feature $j is assigned an :exponential margin (requires non-negative values) " *
+                "but contains negative values (minimum = $(minimum(y_j))). " *
                 "Fix the data or override with feature_types[$j] = :gaussian."))
 
         elseif ft === :poisson
@@ -96,6 +98,12 @@ function _validate_input(data, K, u0, tol, delta_prior,
                 "Feature $j is assigned a Poisson margin (requires non-negative integer values) " *
                 "but contains negative values (minimum = $(minimum(y_j))). " *
                 "Override with feature_types[$j] = :gaussian if needed."))
+
+        elseif ft === :bernoulli
+            any(x -> x < 0 || x > 1, y_j) && throw(ArgumentError(
+                "Feature $j is assigned a Bernoulli margin (requires values in [0,1]) " *
+                "but contains values outside [0,1] (range: [$(minimum(y_j)), $(maximum(y_j))]). " *
+                "For Binomial data, divide counts by the number of trials n first."))
 
         elseif ft === :multinomial
             C = length(y_j[1])
@@ -113,9 +121,19 @@ end
 # ── Feature type inference and resolution ─────────────────────────────────────
 
 function _infer_margin_type(y_j)
-    eltype(y_j) <: AbstractVector                    && return :multinomial
-    all(x -> x >= 0 && isinteger(x), y_j)           && return :poisson
-    all(x -> x > 0, y_j)                            && return :gamma
+    eltype(y_j) <: AbstractVector                && return :multinomial
+    all(x -> x == 0.0 || x == 1.0, y_j)         && return :bernoulli
+    all(x -> x >= 0 && isinteger(x), y_j)        && return :poisson
+    if all(x -> x > 0, y_j)
+        if all(x -> x < 1, y_j)
+            @warn "Feature contains continuous proportions in (0,1). " *
+                  "No exact-conjugate Beta margin is available; the feature will be " *
+                  "modelled with a Gamma margin (support mismatched). " *
+                  "Recommended: apply the logit transform  y .= log.(y ./ (1 .- y))  " *
+                  "before calling mixClust so that a Gaussian margin is used instead."
+        end
+        return :gamma
+    end
     return :gaussian
 end
 
@@ -160,10 +178,16 @@ function _init_margins(data::AbstractVector, K::Int, feature_types::Vector{Symbo
         ft  = feature_types[j]
         if ft === :multinomial
             margins[j] = MultinomialMargin(y_j, K)
+        elseif ft === :bernoulli
+            margins[j] = BernoulliMargin(y_j, K)
         elseif ft === :poisson
             margins[j] = PoissonMargin(y_j, K)
         elseif ft === :gamma
             margins[j] = GammaMargin(y_j, K)
+        elseif ft === :lognormal
+            margins[j] = LogNormalMargin(y_j, K)
+        elseif ft === :exponential
+            margins[j] = ExponentialMargin(y_j, K)
         else  # :gaussian
             margins[j] = GaussianMargin(y_j, K)
         end
@@ -199,7 +223,35 @@ function _cavi_once(data::AbstractVector, K::Int,
             delta_star[:, :, 1] .= d1;  delta_star[:, :, 2] .= d0
         end
         for j in 1:p
+            # BernoulliMargin uses a diverse grid initialisation; calling
+            # update_margin! here with a random w would collapse all clusters
+            # to p̂≈p_bg, destroying the diversity needed to escape the null
+            # fixed-point.  Other margins are initialised at p_bg for all k
+            # and need this call to differentiate.
+            margins[j] isa BernoulliMargin && continue
             update_margin!(margins[j], data[j], w, pip[:, j])
+        end
+
+        # Pre-align w for BernoulliMargin features: use the diverse initial p_k
+        # values to assign each observation to the cluster whose expected log
+        # density is highest.  Without this, the random soft assignment gives
+        # each cluster p̂_k ≈ p_bg, making all features appear irrelevant.
+        bern_indices = findall(j -> margins[j] isa BernoulliMargin, 1:p)
+        if !isempty(bern_indices)
+            psi_sum_alpha_init = digamma(sum(u_star))
+            E_ln_omega_init    = [digamma(u_star[k]) - psi_sum_alpha_init for k in 1:K]
+            E_log_f_init       = [expected_log_density(margins[j], data[j]) for j in bern_indices]
+            log_w_init         = Matrix{Float64}(undef, n, K)
+            for k in 1:K, i in 1:n
+                log_w_init[i, k] = E_ln_omega_init[k] +
+                    sum(pip[i, bern_indices[jj]] * E_log_f_init[jj][i, k]
+                        for jj in eachindex(bern_indices))
+            end
+            for i in 1:n
+                max_log = maximum(log_w_init[i, :])
+                row = exp.(log_w_init[i, :] .- max_log)
+                w[i, :] .= row ./ sum(row)
+            end
         end
     else
         margins    = deepcopy(init.margins)
@@ -210,6 +262,7 @@ function _cavi_once(data::AbstractVector, K::Int,
     end
 
     elbo_history = Float64[]
+    omega_history = Vector{Vector{Float64}}()
 
     for it in 1:max_iter
         w_old   = copy(w)
@@ -388,6 +441,7 @@ function _cavi_once(data::AbstractVector, K::Int,
         KL_theta = sum(kl_from_prior(margins[j]) for j in 1:p)
 
         push!(elbo_history, E_data + H_latent + E_latent_prior - KL_omega - KL_gamma - KL_theta)
+        push!(omega_history, u_star ./ sum(u_star))
 
         # --- E. Update Margin Parameters (after ELBO) ---
         # Kept after ELBO so the logged sequence uses consistent
@@ -403,12 +457,13 @@ function _cavi_once(data::AbstractVector, K::Int,
     end
 
     labels = [argmax(w[i, :]) for i in 1:n]
-    return MixClustResult(w, labels, pip, u_star, delta_star, margins, elbo_history)
+    omega_mat = isempty(omega_history) ? Matrix{Float64}(undef, 0, K) : reduce(vcat, [v' for v in omega_history])
+    return MixClustResult(w, labels, pip, u_star, delta_star, margins, elbo_history, omega_mat)
 end
 
 """
     mixClust(data, K; model_setting, u0, delta_prior, max_iter, tol,
-             prune, size_threshold, merge_threshold, beta_estimation,
+             compact, beta_estimation,
              n_init, max_iter_init, feature_types) -> MixClustResult
 
 Fit a finite Bayesian mixture model via CAVI on heterogeneous data.
@@ -419,8 +474,8 @@ Fit a finite Bayesian mixture model via CAVI on heterogeneous data.
   Use `Vector{Float64}` for numeric features and `Vector{Vector{Int}}` (one-hot) for
   Multinomial features. The margin type is inferred automatically unless overridden
   via `feature_types`.
-- `K`: Maximum number of components (overfitted mixture; the actual K̂ ≤ K is
-  selected automatically after pruning).
+- `K`: Maximum number of components (overfitted mixture; the active order K̂ ≤ K is
+  selected automatically via the sparse Dirichlet prior).
 
 # Keyword arguments
 
@@ -435,12 +490,8 @@ Fit a finite Bayesian mixture model via CAVI on heterogeneous data.
 - `max_iter`: Maximum CAVI iterations for the final run. Default: `500`.
 - `tol`: Convergence threshold on the maximum absolute change in `w` and `pip`
   between consecutive iterations. Default: `1e-4`.
-- `prune`: If `true`, apply post-hoc size-based pruning and cosine-similarity-based
-  merging after convergence. Default: `true`.
-- `size_threshold`: Minimum relative cluster size (fraction of `n`) to retain during
-  pruning. Default: `0.02`.
-- `merge_threshold`: Cosine similarity of soft assignment vectors above which two
-  clusters are merged. Default: `0.85`.
+- `compact`: If `true`, drop empty mixture components (clusters with zero observations
+  under MAP assignment) upon convergence. Default: `true`.
 - `beta_estimation`: `:two_stage` (background parameters estimated once on the full
   dataset before CAVI, then held fixed) or `:iterative` (re-estimated at every CAVI
   step as a weighted M-step). Default: `:two_stage`.
@@ -483,9 +534,7 @@ function mixClust(data::AbstractVector, K::Int;
                   delta_prior                 = (1.0, 1.0),
                   max_iter::Int               = 500,
                   tol                         = 1e-4,
-                  prune::Bool                 = true,
-                  size_threshold              = 0.02,
-                  merge_threshold             = 0.85,
+                  compact::Bool               = true,
                   beta_estimation::Symbol     = :two_stage,
                   n_init::Int                 = 10,
                   max_iter_init::Int          = 10,
@@ -496,16 +545,25 @@ function mixClust(data::AbstractVector, K::Int;
 
     # Validate all inputs; throws ArgumentError / DimensionMismatch on bad input
     _validate_input(data, K, u0, tol, delta_prior,
-                    size_threshold, merge_threshold, beta_estimation,
+                    beta_estimation,
                     n_init, max_iter_init, max_iter,
                     feature_types, resolved_types)
 
     # Log resolved margin types so users can verify the auto-detection
-    _names = Dict(:gaussian => "Gaussian", :poisson => "Poisson",
-                  :gamma => "Gamma", :multinomial => "Multinomial")
-    @info "mixClust: margin types for $(length(data)) features:" *
-          join(["\n  [$(j)] $(get(_names, resolved_types[j], string(resolved_types[j])))"
-                for j in eachindex(resolved_types)])
+    if length(data) <= 15
+        _names = Dict(:gaussian => "Gaussian", :bernoulli => "Bernoulli",
+                      :poisson => "Poisson", :gamma => "Gamma", :multinomial => "Multinomial")
+        @info "mixClust: margin types for $(length(data)) features:" *
+              join(["\n  [$(j)] $(get(_names, resolved_types[j], string(resolved_types[j])))"
+                    for j in eachindex(resolved_types)])
+    else
+        @info "mixClust: $(length(data)) features resolved (" *
+              "$(count(==(:gaussian), resolved_types)) Gaussian, " *
+              "$(count(==(:poisson), resolved_types)) Poisson, " *
+              "$(count(==(:multinomial), resolved_types)) Multinomial, " *
+              "$(count(==(:gamma), resolved_types)) Gamma, " *
+              "$(count(==(:bernoulli), resolved_types)) Bernoulli)"
+    end
 
     # Phase 1: n_init short screening runs
     best_screen = _cavi_once(data, K, model_setting, u0, delta_prior,
@@ -522,10 +580,6 @@ function mixClust(data::AbstractVector, K::Int;
     best = _cavi_once(data, K, model_setting, u0, delta_prior,
                       max_iter, tol, beta_estimation, resolved_types; init = best_screen)
 
-    if prune
-        return prune_and_merge_clusters(best, data;
-                                        size_threshold  = size_threshold,
-                                        merge_threshold = merge_threshold)
-    end
-    return best
+    return compact ? compact_clusters(best, data) : best
 end
+

@@ -1,8 +1,11 @@
 Manifest.toml
 test/plots/
+experiments/figures/
 *.jld2
 *.jl.cov
 *.jl.*.cov
 *.jl.mem
 /docs/build/
 /docs/site/
+*gr-temp/
+

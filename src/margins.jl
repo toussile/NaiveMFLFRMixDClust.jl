@@ -74,4 +74,16 @@ function kl_from_prior(margin::AbstractMargin)
     error("kl_from_prior not implemented for type $(typeof(margin))")
 end
 
+"""
+    hellinger_divergence(margin::AbstractMargin) -> Vector{Float64}
+
+Computes the squared Hellinger distance H²(f_{k,j}, f_{0,j}) ∈ [0, 1] between each cluster-specific
+distribution (evaluated at variational posterior mean parameters) and the invariant background distribution.
+Returns a vector of length K where the k-th entry is H²(f_{k,j}, f_{0,j}) = 1 - BC(f_{k,j}, f_{0,j}).
+"""
+function hellinger_divergence(margin::AbstractMargin)
+    error("hellinger_divergence not implemented for type $(typeof(margin))")
+end
+
+
 

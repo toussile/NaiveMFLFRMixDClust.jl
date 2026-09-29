@@ -1,8 +1,8 @@
-# MixClustVIjl
+# NaiveMFLFRMixDClust
 
 **Bayesian mixture model clustering for heterogeneous data via Variational Inference.**
 
-`MixClustVIjl` fits finite mixture models to datasets containing any combination of
+`NaiveMFLFRMixDClust` fits finite mixture models to datasets containing any combination of
 continuous, count, and categorical variables, using Coordinate Ascent Variational
 Inference (CAVI). It simultaneously selects the number of clusters, identifies which
 features actually drive the cluster structure, and produces diagnostic plots — all from
@@ -42,7 +42,7 @@ a single model fit.
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/toussile/MixClustVIjl.git")
+Pkg.add(url="https://github.com/toussile/NaiveMFLFRMixDClust.jl.git")
 ```
 
 ### Local development install
@@ -51,19 +51,19 @@ If you have cloned the repository locally:
 
 ```julia
 using Pkg
-Pkg.develop(path="/path/to/MixClustVIjl")
+Pkg.develop(path="/path/to/NaiveMFLFRMixDClust.jl")
 ```
 
 ### Updating
 
 ```julia
-Pkg.update("MixClustVIjl")
+Pkg.update("NaiveMFLFRMixDClust")
 ```
 
 Or in the Julia REPL package manager (`]` key):
 
 ```
-] update MixClustVIjl
+] update NaiveMFLFRMixDClust
 ```
 
 ### From the Julia General Registry (planned)
@@ -71,7 +71,7 @@ Or in the Julia REPL package manager (`]` key):
 Once registered:
 
 ```julia
-Pkg.add("MixClustVIjl")
+Pkg.add("NaiveMFLFRMixDClust")
 ```
 
 ---
@@ -82,7 +82,7 @@ Pkg.add("MixClustVIjl")
 Multinomial) + 2 uninformative noise features.
 
 ```julia
-using MixClustVIjl
+using NaiveMFLFRMixDClust
 
 # ── 1. Generate the synthetic dataset ─────────────────────────────────────
 cohort        = simulate_synthetic_cohort()   # seed=2026, n=150 by default
@@ -138,7 +138,7 @@ and can be loaded directly — see [Bundled datasets](#bundled-datasets) below.
 ## Example: Iris dataset (4 Gaussian features)
 
 ```julia
-using MixClustVIjl, RDatasets, Statistics, Random
+using NaiveMFLFRMixDClust, RDatasets, Statistics, Random
 
 # Load and standardize
 iris          = RDatasets.dataset("datasets", "iris")
@@ -362,7 +362,7 @@ plot_assignments       → where do individuals fall in feature space?
 
 ## Citation
 
-If you use `MixClustVIjl` in your research, please cite:
+If you use `NaiveMFLFRMixDClust` in your research, please cite:
 
 ```bibtex
 @article{toussile2026mixclustvi,

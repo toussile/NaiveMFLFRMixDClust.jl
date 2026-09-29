@@ -1,43 +1,84 @@
 """
-    compute_eig(margins::Vector{<:AbstractMargin}, w::AbstractMatrix, pip::AbstractMatrix) -> Vector{Float64}
+    compute_local_ehd(margins::Vector{<:AbstractMargin}, w::AbstractMatrix, pip::AbstractVecOrMat) -> Matrix{Float64}
 
-Computes the Expected Information Gain (EIG) for each feature.
-- `margins`: Vector of length p containing the updated concrete margins.
-- `w`: The n x K matrix of cluster assignment probabilities.
-- `pip`: The n x p matrix of individual Posterior Inclusion Probabilities (gamma_ij).
+Computes the cluster-specific Expected Hellinger Distance (EHD_{k,j}) for each cluster k and feature j,
+intrinsically bounded in [0, 1]:
+    \\mathbf{EHD}_{k,j} = \\bar{\\gamma}_{k,j} * H^2(f_{k,j}, f_{0,j}) \\in [0, 1]
+where H^2(f_{k,j}, f_{0,j}) \\in [0, 1] is the squared Hellinger distance between cluster distribution
+f_{k,j} and background distribution f_{0,j}, and \\bar{\\gamma}_{k,j} is the estimated activation
+probability of feature j in cluster k.
 
-Returns a vector of length p representing the EIG of each feature.
+Returns a K x p matrix representing the local EHD of each feature across clusters.
 """
-function compute_eig(margins::Vector{<:AbstractMargin}, w::AbstractMatrix, pip::AbstractMatrix)
+function compute_local_ehd(margins::Vector{<:AbstractMargin}, w::AbstractMatrix, pip::AbstractVecOrMat)
     n, K = size(w)
     p = length(margins)
     
-    # Compute estimated cluster proportions w_bar
-    w_bar = Vector{Float64}(undef, K)
+    ehd_local = zeros(Float64, K, p)
     for k in 1:K
-        w_bar[k] = sum(w[:, k]) / n
+        sum_w_k = sum(w[:, k])
+        if sum_w_k <= 1e-12
+            continue
+        end
+        
+        for j in 1:p
+            # 1. Feature activation probability in cluster k: \bar{\gamma}_{k,j}
+            gamma_kj = if ndims(pip) == 1
+                Float64(pip[j])
+            else
+                sum(w[:, k] .* pip[:, j]) / sum_w_k
+            end
+            
+            # 2. Squared Hellinger distance H^2(f_{k,j}, f_{0,j}) \in [0, 1]
+            h2 = hellinger_divergence(margins[j]) # Vector of length K
+            h2_kj = clamp(h2[k], 0.0, 1.0)
+            
+            # 3. Local Expected Hellinger Distance intrinsically bounded in [0, 1]
+            ehd_local[k, j] = clamp(gamma_kj * h2_kj, 0.0, 1.0)
+        end
     end
     
-    eig = Vector{Float64}(undef, p)
+    return ehd_local
+end
+
+"""
+    compute_ehd(margins::Vector{<:AbstractMargin}, w::AbstractMatrix, pip::AbstractVecOrMat) -> Vector{Float64}
+
+Computes the population-level Expected Hellinger Distance (EHD_j) for each feature j,
+intrinsically bounded in [0, 1]:
+    \\mathbf{EHD}_j = \\sum_{k=1}^K \\bar{\\omega}_k * \\mathbf{EHD}_{k,j} \\in [0, 1]
+where \\bar{\\omega}_k = \\frac{1}{n} \\sum_{i=1}^n w_{i,k} are estimated cluster mixing weights.
+
+Returns a vector of length p representing the global EHD of each feature.
+"""
+function compute_ehd(margins::Vector{<:AbstractMargin}, w::AbstractMatrix, pip::AbstractVecOrMat)
+    n, K = size(w)
+    p = length(margins)
+    
+    ehd_local = compute_local_ehd(margins, w, pip) # K x p
+    
+    # Compute estimated cluster proportions w_bar
+    w_bar = [sum(w[:, k]) / n for k in 1:K]
+    
+    ehd = zeros(Float64, p)
     for j in 1:p
-        # Compute average PIP for feature j
-        gamma_bar = sum(pip[:, j]) / n
-        
-        # Get the expected KL divergences for feature j across all clusters
-        kl = expected_kl_divergence(margins[j]) # Vector of length K
-        
-        # EIG_j = gamma_bar * sum_{k} w_bar_k * kl_k (only for active clusters with w_bar >= 0.02)
         val = 0.0
         for k in 1:K
-            if w_bar[k] >= 0.02
-                val += w_bar[k] * kl[k]
-            end
+            val += w_bar[k] * ehd_local[k, j]
         end
-        eig[j] = gamma_bar * val
+        ehd[j] = clamp(val, 0.0, 1.0)
     end
     
-    return eig
+    return ehd
 end
+
+# Backward compatibility aliases
+const compute_local_eig = compute_local_ehd
+const compute_eig = compute_ehd
+
+compute_ehd(results::MixClustResult) = compute_ehd(results.margins, results.w, results.pip)
+compute_local_ehd(results::MixClustResult) = compute_local_ehd(results.margins, results.w, results.pip)
+
 
 
 """
@@ -162,132 +203,273 @@ end
 
 
 """
-    prune_and_merge_clusters(results::MixClustResult, data::AbstractVector; size_threshold=0.02, merge_threshold=0.85) -> MixClustResult
+    n_active_clusters(w; threshold=0.02) -> Int
 
-Prunes clusters below size_threshold and merges highly overlapping clusters with cosine similarity of assignments above merge_threshold.
+Return the number of clusters whose mean responsibility exceeds `threshold`.
+This is the single canonical definition used throughout the package and scripts.
 """
-function prune_and_merge_clusters(results::MixClustResult, data::AbstractVector;
-                                  size_threshold=0.02,
-                                  merge_threshold=0.85)
+function n_active_clusters(w::AbstractMatrix; threshold::Real=0.02)
+    n = size(w, 1)
+    return sum(k -> sum(w[:, k]) / n >= threshold, 1:size(w, 2))
+end
+
+n_active_clusters(results::MixClustResult; threshold::Real=0.02) = n_active_clusters(results.w; threshold=threshold)
+
+
+"""
+    compact_clusters(results::MixClustResult, data::Union{AbstractVector, Nothing}=nothing) -> MixClustResult
+
+Drop unassigned mixture components (clusters with zero observations under MAP assignment,
+i.e. `count(==(k), results.labels) == 0`).
+
+This reflects the intrinsic sparse Dirichlet order selection (u⁽⁰⁾ < 1) where empty
+components are naturally driven to zero weight. Unlike heuristic pruning, this operation
+drops only strictly unpopulated components and does not perform heuristic merges.
+"""
+function compact_clusters(results::MixClustResult, data::Union{AbstractVector, Nothing}=nothing)
     w = copy(results.w)
     pip = copy(results.pip)
     u_star = copy(results.u_star)
     delta_star = copy(results.delta_star)
-    margins = [deepcopy(m) for m in results.margins]
-    
     n, K = size(w)
-    p = length(margins)
-    
-    # 1. Size-based pruning
-    active_clusters = Int[]
-    for k in 1:K
-        prop = sum(w[:, k]) / n
-        if prop >= size_threshold
-            push!(active_clusters, k)
-        end
+    p = length(results.margins)
+
+    # Active clusters: those with at least one observation assigned under MAP
+    lbl = results.labels
+    active_clusters = sort(unique(lbl))
+
+    # If all components are populated, no compaction is needed
+    if length(active_clusters) == K || isempty(active_clusters)
+        return results
     end
-    
-    if length(active_clusters) < K
-        w = w[:, active_clusters]
-        for i in 1:n
-            s = sum(w[i, :])
-            if s > 0
-                w[i, :] ./= s
-            else
-                w[i, :] .= 1.0 / length(active_clusters)
-            end
-        end
-        u_star = u_star[active_clusters]
-        if ndims(delta_star) == 3
-            delta_star = delta_star[active_clusters, :, :]
-        end
-        K = length(active_clusters)
-    end
-    
-    # 2. Overlap-based merging
-    merged = true
-    while merged && K > 1
-        merged = false
-        best_sim = -1.0
-        best_pair = (0, 0)
-        
-        for k1 in 1:K
-            for k2 in (k1+1):K
-                vec1 = w[:, k1]
-                vec2 = w[:, k2]
-                norm1 = sqrt(sum(vec1.^2))
-                norm2 = sqrt(sum(vec2.^2))
-                sim = (norm1 > 0 && norm2 > 0) ? sum(vec1 .* vec2) / (norm1 * norm2) : 0.0
-                
-                if sim > best_sim
-                    best_sim = sim
-                    best_pair = (k1, k2)
-                end
-            end
-        end
-        
-        if best_sim >= merge_threshold
-            k1, k2 = best_pair
-            w_new = Matrix{Float64}(undef, n, K - 1)
-            idx_new = 1
-            for k in 1:K
-                if k == k1
-                    w_new[:, idx_new] = w[:, k1] .+ w[:, k2]
-                    idx_new += 1
-                elseif k != k2
-                    w_new[:, idx_new] = w[:, k]
-                    idx_new += 1
-                end
-            end
-            
-            for i in 1:n
-                s = sum(w_new[i, :])
-                if s > 0
-                    w_new[i, :] ./= s
-                end
-            end
-            
-            w = w_new
-            u_star = [sum(w[:, k]) for k in 1:(K-1)]
-            K = K - 1
-            merged = true
-        end
-    end
-    
-    # 3. Re-fit margins based on the new assignments
-    new_margins = Vector{AbstractMargin}(undef, p)
-    for j in 1:p
-        y_j = data[j]
-        if typeof(margins[j]) <: MultinomialMargin
-            new_margins[j] = MultinomialMargin(y_j, K; varphi=margins[j].varphi)
-        elseif typeof(margins[j]) <: PoissonMargin
-            new_margins[j] = PoissonMargin(y_j, K; a_0=margins[j].a_0, b_0=margins[j].b_0)
-        elseif typeof(margins[j]) <: GammaMargin
-            new_margins[j] = GammaMargin(y_j, K; alpha_0=margins[j].alpha_0, beta_0=margins[j].beta_0)
+
+    K_new = length(active_clusters)
+
+    # 1. Compact soft assignments w and renormalize
+    w = w[:, active_clusters]
+    for i in 1:n
+        s = sum(w[i, :])
+        if s > 0
+            w[i, :] ./= s
         else
-            new_margins[j] = GaussianMargin(y_j, K; mu_0=margins[j].mu_0, kappa_0=margins[j].kappa_0, a_0=margins[j].a_0, b_0=margins[j].b_0)
+            w[i, :] .= 1.0 / K_new
         end
-        update_margin!(new_margins[j], y_j, w, pip[:, j])
     end
-    
-    new_u_star = fill(0.01 + n / K, K)
-    for k in 1:K
-        new_u_star[k] = 0.01 + sum(w[:, k])
+
+    # 2. Compact u_star
+    u_star = u_star[active_clusters]
+
+    # 3. Compact delta_star if 3D (LFRM)
+    if ndims(delta_star) == 3
+        delta_star = delta_star[active_clusters, :, :]
     end
-    
-    new_delta_star = ndims(results.delta_star) == 2 ? fill(1.0, p, 2) : fill(1.0, K, p, 2)
-    if ndims(results.delta_star) == 2
-        new_delta_star .= results.delta_star
+
+    # 4. Compact or refit margins
+    new_margins = Vector{AbstractMargin}(undef, p)
+    if data !== nothing
+        for j in 1:p
+            y_j = data[j]
+            m_old = results.margins[j]
+            if m_old isa MultinomialMargin
+                new_margins[j] = MultinomialMargin(y_j, K_new; varphi=m_old.varphi)
+            elseif m_old isa BernoulliMargin
+                new_margins[j] = BernoulliMargin(y_j, K_new; alpha_0=m_old.alpha_0, beta_0=m_old.beta_0)
+            elseif m_old isa PoissonMargin
+                new_margins[j] = PoissonMargin(y_j, K_new; a_0=m_old.a_0, b_0=m_old.b_0)
+            elseif m_old isa GammaMargin
+                new_margins[j] = GammaMargin(y_j, K_new; alpha_0=m_old.alpha_0, beta_0=m_old.beta_0)
+            elseif m_old isa LogNormalMargin
+                new_margins[j] = LogNormalMargin(y_j, K_new; mu_0=m_old.mu_0, kappa_0=m_old.kappa_0, a_0=m_old.a_0, b_0=m_old.b_0)
+            elseif m_old isa ExponentialMargin
+                new_margins[j] = ExponentialMargin(y_j, K_new; alpha_0=m_old.alpha_0, beta_0=m_old.beta_0)
+            else
+                new_margins[j] = GaussianMargin(y_j, K_new; mu_0=m_old.mu_0, kappa_0=m_old.kappa_0, a_0=m_old.a_0, b_0=m_old.b_0)
+            end
+            update_margin!(new_margins[j], y_j, w, pip[:, j])
+        end
     else
-        for k in 1:K
-            for j in 1:p
-                new_delta_star[k, j, 1] = 1.0 + sum(w[:, k] .* pip[:, j])
-                new_delta_star[k, j, 2] = 1.0 + sum(w[:, k] .* (1.0 .- pip[:, j]))
+        for j in 1:p
+            m_old = results.margins[j]
+            if m_old isa GaussianMargin
+                new_margins[j] = GaussianMargin(
+                    m_old.mu_0, m_old.kappa_0, m_old.a_0, m_old.b_0,
+                    m_old.mu_star[active_clusters], m_old.kappa_star[active_clusters],
+                    m_old.a_star[active_clusters], m_old.b_star[active_clusters],
+                    m_old.mu_bg, m_old.tau_bg
+                )
+            elseif m_old isa LogNormalMargin
+                new_margins[j] = LogNormalMargin(
+                    m_old.mu_0, m_old.kappa_0, m_old.a_0, m_old.b_0,
+                    m_old.mu_star[active_clusters], m_old.kappa_star[active_clusters],
+                    m_old.a_star[active_clusters], m_old.b_star[active_clusters],
+                    m_old.mu_bg, m_old.tau_bg
+                )
+            elseif m_old isa ExponentialMargin
+                new_margins[j] = ExponentialMargin(
+                    m_old.alpha_0, m_old.beta_0,
+                    m_old.alpha_star[active_clusters], m_old.beta_star[active_clusters],
+                    m_old.lambda_bg
+                )
+            elseif m_old isa MultinomialMargin
+                new_margins[j] = MultinomialMargin(
+                    m_old.varphi, m_old.varphi_star[active_clusters, :], m_old.phi_bg
+                )
+            elseif m_old isa PoissonMargin
+                new_margins[j] = PoissonMargin(
+                    m_old.a_0, m_old.b_0,
+                    m_old.a_star[active_clusters], m_old.b_star[active_clusters],
+                    m_old.lambda_bg
+                )
+            elseif m_old isa BernoulliMargin
+                new_margins[j] = BernoulliMargin(
+                    m_old.alpha_0, m_old.beta_0,
+                    m_old.alpha_star[active_clusters], m_old.beta_star[active_clusters],
+                    m_old.p_bg
+                )
+            elseif m_old isa GammaMargin
+                new_margins[j] = GammaMargin(
+                    m_old.alpha_0, m_old.beta_0,
+                    m_old.alpha_star[active_clusters], m_old.beta_star[active_clusters],
+                    m_old.a_bg, m_old.b_bg, m_old.a_cl
+                )
             end
         end
     end
-    
-    labels = [argmax(w[i, :]) for i in 1:size(w, 1)]
-    return MixClustResult(w, labels, pip, new_u_star, new_delta_star, new_margins, results.elbo_history)
+
+    labels = [argmax(w[i, :]) for i in 1:n]
+    omega_hist = isempty(results.omega_history) ? Matrix{Float64}(undef, 0, K_new) : results.omega_history[:, active_clusters]
+    return MixClustResult(w, labels, pip, u_star, delta_star, new_margins, results.elbo_history, omega_hist)
 end
+
+
+"""
+    coordinate_inactivation_rate(pip::AbstractMatrix) -> Vector{Float64}
+    coordinate_inactivation_rate(results::MixClustResult) -> Vector{Float64}
+
+Computes the coordinate inactivation rate \$\\bar{\\rho}_i \\in [0, 1]\$ for each observation \$i = 1, \\dots, n\$:
+    \$\\bar{\\rho}_i = 1 - \\frac{1}{p} \\sum_{j=1}^p \\varphi_{i,j}^*\$
+where \$\\varphi_{i,j}^* = q^*(s_{i,j}=1)\$ is the posterior inclusion probability of feature \$j\$ for individual \$i\$.
+Higher values indicate greater deviation from all cluster structures towards background noise.
+"""
+function coordinate_inactivation_rate(pip::AbstractMatrix)
+    n, p = size(pip)
+    rho = Vector{Float64}(undef, n)
+    for i in 1:n
+        rho[i] = 1.0 - sum(view(pip, i, :)) / p
+    end
+    return rho
+end
+
+coordinate_inactivation_rate(results::MixClustResult) = coordinate_inactivation_rate(results.pip)
+
+"""
+    detect_outliers(results::MixClustResult; threshold::Real=0.55, mode::Symbol=:inactivation_rate) -> BitVector
+    detect_outliers(pip::AbstractMatrix; threshold::Real=0.55, mode::Symbol=:inactivation_rate) -> BitVector
+
+Identifies observations as background outliers/anomalies based on coordinate inactivation.
+
+# Modes
+- `:inactivation_rate` (default): Flags observations with \$\\bar{\\rho}_i \\ge \\text{threshold}\$.
+- `:map_strict`: Flags observations whose joint MAP feature selection profile is the null vector \$\\bm{s}_i = \\bm{0}_p\$ (i.e. \$\\varphi_{i,j}^* < 0.5\$ for all \$j = 1, \\dots, p\$).
+- `:map_relaxed`: Flags observations where the fraction of inactive coordinates (\$\\varphi_{i,j}^* < 0.5\$) is \$\\ge \\text{threshold}\$.
+"""
+function detect_outliers(pip::AbstractMatrix; threshold::Real=0.55, mode::Symbol=:inactivation_rate)
+    n, p = size(pip)
+    if mode === :inactivation_rate
+        rho = coordinate_inactivation_rate(pip)
+        return rho .>= threshold
+    elseif mode === :map_strict
+        out = falses(n)
+        for i in 1:n
+            out[i] = all(pip[i, :] .< 0.5)
+        end
+        return out
+    elseif mode === :map_relaxed
+        out = falses(n)
+        for i in 1:n
+            out[i] = count(x -> x < 0.5, view(pip, i, :)) / p >= threshold
+        end
+        return out
+    else
+        throw(ArgumentError("Unknown outlier detection mode: \$mode. Choose from :inactivation_rate, :map_strict, :map_relaxed"))
+    end
+end
+
+detect_outliers(results::MixClustResult; threshold::Real=0.55, mode::Symbol=:inactivation_rate) =
+    detect_outliers(results.pip; threshold=threshold, mode=mode)
+
+"""
+    robust_cluster_assignments(results::MixClustResult; threshold::Real=0.55, mode::Symbol=:inactivation_rate) -> Vector{Int}
+
+Returns robust cluster assignments \$\\widehat{z}_i^{\\mathrm{robust}} \\in \\{0, 1, \\dots, K\\}\$, where:
+- `0` indicates an anomalous observation rejected as background noise,
+- `k \\in \\{1, \\dots, K\\}` indicates assignment to cluster `k` via standard MAP.
+"""
+function robust_cluster_assignments(results::MixClustResult; threshold::Real=0.55, mode::Symbol=:inactivation_rate)
+    is_outlier = detect_outliers(results; threshold=threshold, mode=mode)
+    z_robust = copy(results.labels)
+    z_robust[is_outlier] .= 0
+    return z_robust
+end
+
+"""
+    compute_pi_0(results::MixClustResult) -> Float64
+
+Compute the marginal prior / variational probability π₀ of the null background
+component (where all coordinates are inactive: sᵢ = 0), given by:
+    π₀ = ∑_{k=1}^K ω̄ₖ ∏_{j=1}^p (1 - γ̄ₖⱼ)
+where ω̄ₖ = u★ₖ / ∑ₗ u★ₗ and γ̄ₖⱼ is the variational posterior mean of γₖⱼ.
+"""
+function compute_pi_0(results::MixClustResult)
+    u_star = results.u_star
+    sum_u = sum(u_star)
+    omega_bar = sum_u > 0 ? u_star ./ sum_u : fill(1.0 / length(u_star), length(u_star))
+    p = length(results.margins)
+    K = length(u_star)
+
+    if ndims(results.delta_star) == 2
+        log_prod = 0.0
+        for j in 1:p
+            d1 = results.delta_star[j, 1]
+            d0 = results.delta_star[j, 2]
+            p_inact = d0 / (d1 + d0)
+            log_prod += log(max(p_inact, 1e-12))
+        end
+        return exp(log_prod)
+    else
+        pi_0 = 0.0
+        for k in 1:K
+            log_prod_k = 0.0
+            for j in 1:p
+                d1 = results.delta_star[k, j, 1]
+                d0 = results.delta_star[k, j, 2]
+                p_inact = d0 / (d1 + d0)
+                log_prod_k += log(max(p_inact, 1e-12))
+            end
+            pi_0 += omega_bar[k] * exp(log_prod_k)
+        end
+        return pi_0
+    end
+end
+
+"""
+    outlier_indices(results::MixClustResult; threshold::Real=0.55, mode::Symbol=:inactivation_rate) -> Vector{Int}
+
+Return indices of observations flagged as background outliers.
+"""
+function outlier_indices(results::MixClustResult; threshold::Real=0.55, mode::Symbol=:inactivation_rate)
+    return findall(detect_outliers(results; threshold=threshold, mode=mode))
+end
+
+"""
+    cluster_indices(results::MixClustResult, k::Int; threshold::Real=0.55, robust::Bool=false) -> Vector{Int}
+
+Return indices of observations assigned to cluster `k`.
+If `robust=true`, background outliers (under `threshold`) are excluded.
+"""
+function cluster_indices(results::MixClustResult, k::Int; threshold::Real=0.55, robust::Bool=false)
+    assignments = robust ? robust_cluster_assignments(results; threshold=threshold) : results.labels
+    return findall(==(k), assignments)
+end
+
 

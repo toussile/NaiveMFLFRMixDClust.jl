@@ -10,7 +10,7 @@ mutable struct MultinomialMargin <: AbstractMargin
 end
 
 function MultinomialMargin(y_j::AbstractVector, K::Int; 
-                           varphi=nothing)
+                           varphi=nothing, robust::Bool=true)
     n = length(y_j)
     C_j = length(y_j[1])
     
@@ -20,7 +20,11 @@ function MultinomialMargin(y_j::AbstractVector, K::Int;
         sum_y .+= y_j[i]
     end
     total_counts = sum(sum_y)
-    phi_bg = total_counts > 0 ? sum_y ./ total_counts : fill(1.0 / C_j, C_j)
+    if robust
+        phi_bg = (sum_y .+ 0.5) ./ (total_counts + 0.5 * C_j)
+    else
+        phi_bg = total_counts > 0 ? sum_y ./ total_counts : fill(1.0 / C_j, C_j)
+    end
     
     # Ensure Dirichlet prior parameter
     prior_varphi = isnothing(varphi) ? phi_bg .* 3.0 : varphi
@@ -191,5 +195,25 @@ function update_background!(margin::MultinomialMargin, y_j::AbstractVector, gamm
         end
     end
 end
+
+function hellinger_divergence(margin::MultinomialMargin)
+    K = size(margin.varphi_star, 1)
+    C_j = length(margin.varphi)
+    h2 = Vector{Float64}(undef, K)
+    phi0 = margin.phi_bg
+    for k in 1:K
+        phi_k = margin.varphi_star[k, :]
+        sum_phi_k = sum(phi_k)
+        pi_k = phi_k ./ sum_phi_k
+        bc = 0.0
+        for c in 1:C_j
+            bc += sqrt(max(pi_k[c], 0.0) * max(phi0[c], 0.0))
+        end
+        bc = clamp(bc, 0.0, 1.0)
+        h2[k] = clamp(1.0 - bc, 0.0, 1.0)
+    end
+    return h2
+end
+
 
 
