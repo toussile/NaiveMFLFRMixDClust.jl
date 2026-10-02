@@ -5,7 +5,7 @@
 `NaiveMFLFRMixDClust` fits finite mixture models to datasets containing any combination of
 continuous, count, and categorical variables, using Coordinate Ascent Variational
 Inference (CAVI). It simultaneously selects the number of clusters, identifies which
-features actually drive the cluster structure, and produces diagnostic plots — all from
+features actually drive the cluster structure, and produces diagnostic plots - all from
 a single model fit.
 
 ---
@@ -131,7 +131,7 @@ println("Log-predictive density: ", round(ll_new, digits=1))
 ```
 
 The UCI Heart Disease dataset used in the paper is bundled with the package
-and can be loaded directly — see [Bundled datasets](#bundled-datasets) below.
+and can be loaded directly - see [Bundled datasets](#bundled-datasets) below.
 
 ---
 
@@ -225,9 +225,9 @@ Generates the synthetic clinicogenomic patient cohort used in the paper (150 pat
 ```julia
 cohort = simulate_synthetic_cohort()          # seed=2026, n=150 by default
 cohort = simulate_synthetic_cohort(seed=42, n=300)  # custom seed and size
-# cohort.data          — Vector{Any} with 7 features, ready for mixClust
-# cohort.labels        — Vector{Int}: true cluster assignment (1, 2, or 3)
-# cohort.feature_names — ["age", "bmi", "mutations", "tumour_size", "histology", ...]
+# cohort.data          - Vector{Any} with 7 features, ready for mixClust
+# cohort.labels        - Vector{Int}: true cluster assignment (1, 2, or 3)
+# cohort.feature_names - ["age", "bmi", "mutations", "tumour_size", "histology", ...]
 ```
 
 ### `load_heart_disease()`
@@ -237,9 +237,9 @@ in the package and ready to use without any external files or downloads:
 
 ```julia
 hd = load_heart_disease()
-# hd.data          — Vector{Any} with 13 features, ready for mixClust
-# hd.labels        — Vector{Int}: 0 = healthy, 1 = disease
-# hd.feature_names — ["age", "sex", "cp", ...]
+# hd.data          - Vector{Any} with 13 features, ready for mixClust
+# hd.labels        - Vector{Int}: 0 = healthy, 1 = disease
+# hd.feature_names - ["age", "sex", "cp", ...]
 
 results = mixClust(hd.data, 10;
                    model_setting = SFRM(),
@@ -265,7 +265,7 @@ categorical and binary features are one-hot encoded as `Vector{Vector{Int}}`.
 ```julia
 results = mixClust(dataset, K_max;
                    model_setting  = SFRM(),   # or LFRM()
-                   u0             = 0.01,     # u⁽⁰⁾: Dirichlet sparsity (< 1; smaller → more pruning)
+                   u0             = nothing,  # u⁽⁰⁾: Dirichlet concentration vector u⁽⁰⁾·1_K; default 1/K (≤ 1/K for sparsity)
                    delta_prior    = (1.0, 1.0), # Beta prior for relevance indicators
                    max_iter       = 500,      # CAVI iterations for the final run
                    tol            = 1e-4,     # convergence tolerance

@@ -109,17 +109,34 @@ function run_shared_vs_local(; n_rep::Int = DEFAULT_N_REP)
     println("\\bottomrule")
     println("\\end{tabular}\n")
 
-    # Barplot for Figure
+    # Barplot for Figure: Side-by-side grouped bars with two distinct bars per category
     categories = ["Globally Active", "Locally Active", "Noise"]
     sfrm_vals  = [results.sfrm.global_mean, results.sfrm.local_mean, results.sfrm.noise_mean]
     lfrm_vals  = [results.lfrm.global_mean, results.lfrm.local_mean, results.lfrm.noise_mean]
+    sfrm_errs  = [results.sfrm.global_std,  results.sfrm.local_std,  results.sfrm.noise_std]
+    lfrm_errs  = [results.lfrm.global_std,  results.lfrm.local_std,  results.lfrm.noise_std]
 
-    p = bar(categories, [sfrm_vals lfrm_vals],
-            labels = ["SFRM (Shared)" "LFRM (Cluster-Specific)"],
-            ylabel = "Standardized Kent EIG ∈ [0, 1)",
+    x_base = [1.0, 2.0, 3.0]
+    bar_w = 0.28
+
+    p = bar(x_base .- bar_w/2, sfrm_vals,
+            yerror = sfrm_errs,
+            bar_width = bar_w,
+            label = "SFRM (Shared)",
+            color = :steelblue,
+            ylabel = "Mean Expected Hellinger Distance (EHD)",
             title = "Feature Saliency: SFRM vs. LFRM (n = 240, K₀ = 3)",
-            color = [:steelblue :darkorange],
-            legend = :topright, ylims = (0.0, 0.8), grid = true)
+            xticks = (x_base, categories),
+            legend = :topright,
+            ylims = (0.0, 0.35),
+            grid = true)
+
+    bar!(p, x_base .+ bar_w/2, lfrm_vals,
+         yerror = lfrm_errs,
+         bar_width = bar_w,
+         label = "LFRM (Cluster-Specific)",
+         color = :darkorange)
+
     savefig(p, joinpath(FIGURES_DIR, "local_vs_global.png"))
 
     return results

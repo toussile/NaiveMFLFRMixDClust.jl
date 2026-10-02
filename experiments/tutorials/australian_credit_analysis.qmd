@@ -1,6 +1,6 @@
 ---
 title: "A Tutorial: Clustering Anonymized Mixed Data with NaiveMFLFRMixDClust"
-subtitle: "A worked example on the UCI Australian Credit Approval dataset — draft companion tutorial, to be published once the manuscript is posted to arXiv"
+subtitle: "A worked example on the UCI Australian Credit Approval dataset - draft companion tutorial, to be published once the manuscript is posted to arXiv"
 bibliography: ../../paper/biblio.bib
 engine: julia
 format:
@@ -26,7 +26,7 @@ The Iris tutorial showed the package on a small, well-understood continuous data
 This one stress-tests a different axis: **how does `NaiveMFLFRMixDClust` perform when most
 features are categorical, some with many levels, and none carry any usable semantic
 meaning?** The UCI [Statlog Australian Credit Approval](https://archive.ics.uci.edu/dataset/143/statlog+australian+credit+approval)
-dataset is built for exactly this kind of test — and unlike Iris, it comes with a
+dataset is built for exactly this kind of test - and unlike Iris, it comes with a
 genuine binary outcome label (loan approved/rejected), so we can compute an Adjusted
 Rand Index (ARI) against external ground truth.
 
@@ -35,7 +35,7 @@ Rand Index (ARI) against external ground truth.
 This dataset concerns credit card applications. Per the UCI documentation:
 *"All attribute names and values have been changed to meaningless symbols to protect
 confidentiality of the data."* It has $n=690$ applications, 6 continuous and 8
-categorical attributes (`A1`–`A14`), and a binary class label (1 = approved, 0 =
+categorical attributes (`A1`-`A14`), and a binary class label (1 = approved, 0 =
 rejected; 307 approved, 383 rejected). Missing values (5% of cases) were imputed in
 the standard release used here (mode for categorical, mean for continuous).
 
@@ -54,7 +54,7 @@ the standard release used here (mode for categorical, mean for continuous).
 | `A11` | categorical | 2 levels |
 | `A12` | categorical | 3 levels |
 | `A13` | continuous | |
-| `A14` | continuous | extreme right skew — `log1p`-transformed before standardization |
+| `A14` | continuous | extreme right skew - `log1p`-transformed before standardization |
 | `class` | label (not a feature) | 1 = approved, 0 = rejected |
 
 `A5` (14 levels) and `A6` (8 levels) make this a useful test of the Multinomial margin
@@ -114,7 +114,7 @@ println("Class distribution: $(count(==(1), labels_true)) approved, $(count(==(0
 
 We fit both model settings with $K_{\text{fit}}=10$, $u^{(0)}=0.01$.
 
-### SFRM — Shared Feature Relevance Model
+### SFRM - Shared Feature Relevance Model
 
 ```{julia}
 Random.seed!(42)
@@ -131,7 +131,7 @@ K_sfrm = size(res_sfrm.w, 2)
 println("Cluster sizes: ", [count(==(k), res_sfrm.labels) for k in 1:K_sfrm])
 ```
 
-### LFRM — Local Feature Relevance Model
+### LFRM - Local Feature Relevance Model
 
 ```{julia}
 Random.seed!(42)
@@ -153,21 +153,21 @@ println("Cluster sizes: ", [count(==(k), res_lfrm.labels) for k in 1:K_lfrm])
 ### Convergence
 
 ```{julia}
-plot_elbo(res_sfrm; title = "ELBO Convergence — SFRM")
+plot_elbo(res_sfrm; title = "ELBO Convergence - SFRM")
 ```
 
 ```{julia}
-plot_elbo(res_lfrm; title = "ELBO Convergence — LFRM")
+plot_elbo(res_lfrm; title = "ELBO Convergence - LFRM")
 ```
 
 ### Cluster Sizes
 
 ```{julia}
-plot_cluster_sizes(res_sfrm; title = "Cluster Sizes — SFRM")
+plot_cluster_sizes(res_sfrm; title = "Cluster Sizes - SFRM")
 ```
 
 ```{julia}
-plot_cluster_sizes(res_lfrm; title = "Cluster Sizes — LFRM")
+plot_cluster_sizes(res_lfrm; title = "Cluster Sizes - LFRM")
 ```
 
 ### Assignment Confidence
@@ -177,38 +177,38 @@ high confidence.
 
 ```{julia}
 plot_assignment_confidence(res_sfrm; threshold = 0.9,
-                           title = "Assignment Confidence — SFRM")
+                           title = "Assignment Confidence - SFRM")
 ```
 
 ```{julia}
 plot_assignment_confidence(res_lfrm; threshold = 0.9,
-                           title = "Assignment Confidence — LFRM")
+                           title = "Assignment Confidence - LFRM")
 ```
 
-### Feature Relevance — PIP
+### Feature Relevance - PIP
 
 ```{julia}
 plot_pips(res_sfrm; feature_names = feature_names,
-          title = "Posterior Inclusion Probabilities — SFRM")
+          title = "Posterior Inclusion Probabilities - SFRM")
 ```
 
 ```{julia}
 plot_pips(res_lfrm; feature_names = feature_names,
-          title = "Posterior Inclusion Probabilities — LFRM")
+          title = "Posterior Inclusion Probabilities - LFRM")
 ```
 
-### Feature Relevance — EIG
+### Feature Relevance - EIG
 
 ```{julia}
 eig_sfrm = compute_eig(res_sfrm.margins, res_sfrm.w, res_sfrm.pip)
 plot_eig(eig_sfrm, 0.20; feature_names = feature_names,
-         title = "Expected Information Gain — SFRM")
+         title = "Expected Information Gain - SFRM")
 ```
 
 ```{julia}
 eig_lfrm = compute_eig(res_lfrm.margins, res_lfrm.w, res_lfrm.pip)
 plot_eig(eig_lfrm, 0.20; feature_names = feature_names,
-         title = "Expected Information Gain — LFRM")
+         title = "Expected Information Gain - LFRM")
 ```
 
 ```{julia}
@@ -222,19 +222,19 @@ println("LFRM active features (EIG ≥ 0.20): ", feature_names[active_lfrm])
 
 ```{julia}
 plot_local_pips(res_lfrm; feature_names = feature_names,
-                title = "Per-Cluster Mean PIPs — LFRM")
+                title = "Per-Cluster Mean PIPs - LFRM")
 ```
 
 ### Subtype Profiles
 
 ```{julia}
 plot_profiles(res_sfrm, dataset; feature_names = feature_names,
-              title = "Feature Profiles — SFRM")
+              title = "Feature Profiles - SFRM")
 ```
 
 ```{julia}
 plot_profiles(res_lfrm, dataset; feature_names = feature_names,
-              title = "Feature Profiles — LFRM")
+              title = "Feature Profiles - LFRM")
 ```
 
 ### Cluster Assignments in Feature Space
@@ -246,20 +246,20 @@ the two features with the highest EIG in both models.
 plot_assignments(res_sfrm, dataset;
                  x_feature = 3, y_feature = 6,
                  feature_names = feature_names,
-                 title = "Cluster Assignments — SFRM (A7 vs log1p(A14))")
+                 title = "Cluster Assignments - SFRM (A7 vs log1p(A14))")
 ```
 
 ```{julia}
 plot_assignments(res_lfrm, dataset;
                  x_feature = 3, y_feature = 6,
                  feature_names = feature_names,
-                 title = "Cluster Assignments — LFRM (A7 vs log1p(A14))")
+                 title = "Cluster Assignments - LFRM (A7 vs log1p(A14))")
 ```
 
 ## External Validation: A Cautionary Result {#sec-ari}
 
-Unlike Iris, this dataset has a real binary outcome — the credit approval decision
-— so we can compute ARI against it. The result is worth reporting honestly.
+Unlike Iris, this dataset has a real binary outcome - the credit approval decision
+- so we can compute ARI against it. The result is worth reporting honestly.
 
 ```{julia}
 function compute_ari(labels_true, labels_pred)
@@ -296,12 +296,12 @@ println("───────────────────────�
         "LFRM", K_lfrm, ari_lfrm, conf_lfrm)
 ```
 
-Both SFRM and LFRM score *below* plain K-means (K=2 fixed, ARI ≈ 0.314) — the
+Both SFRM and LFRM score *below* plain K-means (K=2 fixed, ARI ≈ 0.314) - the
 opposite of the UCI Heart Disease result. The reason: K-means forced to $K=2$ is
 by construction aligned with a binary label. Our model finds finer subpopulation
-structure ($\widehat{K}=5$–$6$) than the approve/reject boundary distinguishes,
+structure ($\widehat{K}=5$-$6$) than the approve/reject boundary distinguishes,
 which mechanically incurs ARI penalties even when the finer clusters are internally
-coherent — as the assignment-confidence numbers above confirm.
+coherent - as the assignment-confidence numbers above confirm.
 
 ::: {.callout-note}
 **ARI against a binary label is not a fair test of automatic order selection.**
@@ -318,8 +318,8 @@ We tested two ways to exploit the discovered cluster structure for predicting lo
 approval, using 10-fold stratified cross-validation (Python scripts
 `experiments/scripts/australian_predictive_cv.py` and `australian_moe_cv.py`):
 
-1. **Feature augmentation** — soft cluster-membership weights added as extra predictors.
-2. **Mixture of experts** — a separate classifier per cluster, weighted by membership.
+1. **Feature augmentation** - soft cluster-membership weights added as extra predictors.
+2. **Mixture of experts** - a separate classifier per cluster, weighted by membership.
 
 | Feature set | Classifier | Accuracy | AUC |
 | :--- | :--- | :---: | :---: |
@@ -333,7 +333,7 @@ approval, using 10-fold stratified cross-validation (Python scripts
 | Mixture of experts, LFRM | per-cluster LogisticRegression | 0.852 ± 0.061 | 0.907 ± 0.047 |
 
 Neither approach helps. Feature augmentation is a wash; the mixture of experts is
-slightly *worse* (splitting $n=690$ into 5–6 per-cluster regressions leaves too few
+slightly *worse* (splitting $n=690$ into 5-6 per-cluster regressions leaves too few
 observations per expert). This is a useful negative result: discovering finer cluster
 structure does not automatically translate into better downstream prediction at this
 sample size.
@@ -342,13 +342,13 @@ sample size.
 
 - `NaiveMFLFRMixDClust` handles high-cardinality categorical features (up to 14 levels) and
   a fully anonymized feature set without numerical difficulty.
-- LFRM surfaces features whose relevance is locally concentrated rather than uniform —
+- LFRM surfaces features whose relevance is locally concentrated rather than uniform -
   consistent with the pattern found on UCI Heart Disease in the main manuscript.
 - **ARI against an external label is not always going to favor automatic order
-  selection over a fixed-$K$ baseline** — and that is not necessarily a failure of
+  selection over a fixed-$K$ baseline** - and that is not necessarily a failure of
   the method.
 - **Discovering finer cluster structure does not automatically translate into better
-  downstream prediction** — a useful negative result for anyone tempted to assume
+  downstream prediction** - a useful negative result for anyone tempted to assume
   "more structure found" implies "more useful for prediction."
 
 ## References {.unnumbered}

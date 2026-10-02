@@ -116,10 +116,12 @@ function MixClustResult(w::Matrix{Float64}, labels::Vector{Int}, pip::Matrix{Flo
     MixClustResult(w, labels, pip, u_star, delta_star, Vector{AbstractMargin}(margins), elbo_history, Matrix{Float64}(undef, 0, size(w, 2)))
 end
 
-# Forward declaration for post_hoc method
+# Forward declarations for post_hoc methods
 function compute_pi_0 end
+function extended_responsibilities end
+function extended_cluster_assignments end
 
-const _VIRTUAL_PROPS = (:n_clusters, :n_obs, :n_features, :cluster_sizes, :inactivation_rate, :pi_0)
+const _VIRTUAL_PROPS = (:n_clusters, :n_obs, :n_features, :cluster_sizes, :inactivation_rate, :pi_0, :extended_responsibilities, :extended_labels)
 
 function Base.getproperty(r::MixClustResult, s::Symbol)
     s === :n_clusters   && return size(getfield(r, :w), 2)
@@ -144,6 +146,8 @@ function Base.getproperty(r::MixClustResult, s::Symbol)
         return rates
     end
     s === :pi_0 && return compute_pi_0(r)
+    s === :extended_responsibilities && return extended_responsibilities(r)
+    s === :extended_labels && return extended_cluster_assignments(r)
     return getfield(r, s)
 end
 

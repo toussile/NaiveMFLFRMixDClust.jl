@@ -2,12 +2,46 @@
 
 All notable changes to NaiveMFLFRMixDClust (formerly MixClustVIjl) are documented here.
 Versioning follows [Semantic Versioning](https://semver.org):
-`MAJOR.MINOR.PATCH` — breaking changes bump MAJOR (or MINOR while pre-1.0),
+`MAJOR.MINOR.PATCH` - breaking changes bump MAJOR (or MINOR while pre-1.0),
 new features bump MINOR, bug fixes bump PATCH.
 
 ---
 
-## [0.3.0] — 2026-09-29
+## [0.4.0] - 2026-10-02
+
+### Breaking changes
+
+- **Default Dirichlet prior is now `u0 = 1/K`** (previously `u0 = 0.01`). The prior on the
+  mixing weights is `Dir(ω; u⁽⁰⁾·1_K)`, i.e. the concentration vector
+  `(u⁽⁰⁾, …, u⁽⁰⁾)`, as in the paper. `mixClust(...; u0 = nothing)` resolves to `1/K`.
+  A warning is issued when `u0 > 1/K` (previously when `u0 ≥ 1`). Pass `u0 = 0.01`
+  explicitly to reproduce 0.3.0 defaults.
+- **`robust_cluster_assignments` is now an alias of `extended_cluster_assignments`**, whose
+  defaults are `mode = :map_tau` and `threshold = :auto`.
+
+### New features
+
+- `predict_pips`: posterior inclusion probabilities for new observations.
+- `calibrate_tau_inact`, `detect_uninformative_observations`: data-driven threshold for the
+  coordinate inactivation rate and detection of uninformative observations.
+- `extended_cluster_assignments`, `extended_responsibilities`, and the result properties
+  `extended_labels` and `extended_responsibilities` (assignment to the background class 0).
+
+### Performance
+
+- The CAVI loop is about 15× faster. Variables assigned in both branches of the
+  initialisation were captured by closures and boxed, which made the inner loops
+  type-unstable; the iterations now run in a separate function (`_cavi_loop!`).
+  Results are bitwise identical.
+
+### Experiments
+
+- `01_order_selection.jl` now sweeps the initial overfitting level `K_max` with
+  `u0 = 1/K_max`; tutorials and validation report updated.
+
+---
+
+## [0.3.0] - 2026-09-29
 
 ### Breaking changes
 
@@ -36,21 +70,21 @@ new features bump MINOR, bug fixes bump PATCH.
 
 ---
 
-## [0.2.0] — 2026-07-05
+## [0.2.0] - 2026-07-05
 
 ### Breaking changes
 
-- **`results.alpha_star` renamed to `results.u_star`** — aligns with the paper
+- **`results.alpha_star` renamed to `results.u_star`** - aligns with the paper
   notation where $\bm{u} = (u_1, \dots, u_K)^T$ denotes the variational Dirichlet
   parameter for mixing proportions. Any code accessing `results.alpha_star` must be
   updated to `results.u_star`.
-- **`alpha_0` keyword renamed to `u0`** in `mixClust(...)` — aligns with the paper
+- **`alpha_0` keyword renamed to `u0`** in `mixClust(...)` - aligns with the paper
   notation $u^{(0)}$ for the symmetric Dirichlet hyperparameter. Any call using
   `mixClust(...; alpha_0=...)` must be updated to `mixClust(...; u0=...)`.
 
 ### Bug fixes
 
-- **ELBO monotonicity** — the ELBO sequence is now guaranteed non-decreasing at
+- **ELBO monotonicity** - the ELBO sequence is now guaranteed non-decreasing at
   every CAVI iteration. Two root causes were fixed:
   - The KL divergence between variational and prior distributions for margin
     parameters (`kl_from_prior`) was missing from the ELBO computation. Implemented
@@ -69,7 +103,7 @@ new features bump MINOR, bug fixes bump PATCH.
 
 ---
 
-## [0.1.0] — 2026-07-04
+## [0.1.0] - 2026-07-04
 
 Initial release. Core features:
 

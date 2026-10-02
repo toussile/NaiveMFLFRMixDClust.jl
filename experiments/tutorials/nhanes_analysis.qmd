@@ -1,6 +1,6 @@
 ---
 title: "A Tutorial: Mixed-Data Cardiometabolic Phenotyping with NaiveMFLFRMixDClust"
-subtitle: "A worked example on NHANES risk-factor data — draft companion tutorial, to be published once the manuscript is posted to arXiv"
+subtitle: "A worked example on NHANES risk-factor data - draft companion tutorial, to be published once the manuscript is posted to arXiv"
 bibliography: ../../paper/biblio.bib
 engine: julia
 format:
@@ -34,7 +34,7 @@ real-data application end to end:
 1. Loading a real, public dataset (NHANES cardiometabolic risk factors).
 2. Fitting the **Shared Feature Relevance Model (SFRM)**.
 3. Fitting the **Local Feature Relevance Model (LFRM)**.
-4. Reading the diagnostics — PIP and EIG — to decide which features matter and why.
+4. Reading the diagnostics - PIP and EIG - to decide which features matter and why.
 5. Relating the result to an independently published analysis of similar data.
 
 ## The Dataset: NHANES Cardiometabolic Risk Factors {#sec-dataset}
@@ -42,7 +42,7 @@ real-data application end to end:
 The National Health and Nutrition Examination Survey (NHANES) is an ongoing public
 health survey run by the U.S. CDC, combining interviews, physical examinations, and
 laboratory tests. We use an extract of 11 cardiometabolic risk factors plus sex and
-smoking status, for adults aged 40–59, from the **2017–2018 cycle**
+smoking status, for adults aged 40-59, from the **2017-2018 cycle**
 [@cdc_nhanes_2017_2018]. This variable set mirrors @wang2026bayesian, an
 independently published CAVI-based mixture model paper analyzing a similar extract.
 
@@ -96,7 +96,7 @@ println("Sex: $(count(==("male"), df.sex)) male, $(count(==("female"), df.sex)) 
 We fit both model settings with $K_{\text{fit}}=10$, $u^{(0)}=0.01$, letting the
 sparse Dirichlet prior plus post-hoc pruning determine $\widehat{K}$ automatically.
 
-### SFRM — Shared Feature Relevance Model
+### SFRM - Shared Feature Relevance Model
 
 Under `SFRM()`, each feature has a single relevance probability shared across all clusters.
 
@@ -115,7 +115,7 @@ K_sfrm = size(res_sfrm.w, 2)
 println("Cluster sizes: ", [count(==(k), res_sfrm.labels) for k in 1:K_sfrm])
 ```
 
-### LFRM — Local Feature Relevance Model
+### LFRM - Local Feature Relevance Model
 
 Under `LFRM()`, relevance can differ cluster by cluster.
 
@@ -139,43 +139,43 @@ println("Cluster sizes: ", [count(==(k), res_lfrm.labels) for k in 1:K_lfrm])
 ### Convergence
 
 ```{julia}
-plot_elbo(res_sfrm; title = "ELBO Convergence — SFRM")
+plot_elbo(res_sfrm; title = "ELBO Convergence - SFRM")
 ```
 
 ```{julia}
-plot_elbo(res_lfrm; title = "ELBO Convergence — LFRM")
+plot_elbo(res_lfrm; title = "ELBO Convergence - LFRM")
 ```
 
 ### Cluster Sizes
 
 ```{julia}
-plot_cluster_sizes(res_sfrm; title = "Cluster Sizes — SFRM")
+plot_cluster_sizes(res_sfrm; title = "Cluster Sizes - SFRM")
 ```
 
 ```{julia}
-plot_cluster_sizes(res_lfrm; title = "Cluster Sizes — LFRM")
+plot_cluster_sizes(res_lfrm; title = "Cluster Sizes - LFRM")
 ```
 
 ### Assignment Confidence
 
 ```{julia}
 plot_assignment_confidence(res_sfrm; threshold = 0.9,
-                           title = "Assignment Confidence — SFRM")
+                           title = "Assignment Confidence - SFRM")
 ```
 
 ```{julia}
 plot_assignment_confidence(res_lfrm; threshold = 0.9,
-                           title = "Assignment Confidence — LFRM")
+                           title = "Assignment Confidence - LFRM")
 ```
 
-### Feature Relevance — PIP
+### Feature Relevance - PIP
 
 Two diagnostics, two different questions:
 
 - **PIP** answers "is this feature active at all (modeled per cluster rather than pooled)?"
 - **EIG** answers "how much does that inclusion actually separate the clusters?"
 
-A feature can have high PIP yet low EIG — `sex` here is a clean example: the model
+A feature can have high PIP yet low EIG - `sex` here is a clean example: the model
 assigns it near-certain inclusion yet its EIG is modest, meaning it structures
 individual cluster densities without strongly separating the cluster centroids.
 Note also that `smoking` is essentially *excluded* by SFRM (PIP ≈ 0): the relevance
@@ -184,26 +184,26 @@ intervention.
 
 ```{julia}
 plot_pips(res_sfrm; feature_names = feature_names,
-          title = "Posterior Inclusion Probabilities — SFRM")
+          title = "Posterior Inclusion Probabilities - SFRM")
 ```
 
 ```{julia}
 plot_pips(res_lfrm; feature_names = feature_names,
-          title = "Posterior Inclusion Probabilities — LFRM")
+          title = "Posterior Inclusion Probabilities - LFRM")
 ```
 
-### Feature Relevance — EIG
+### Feature Relevance - EIG
 
 ```{julia}
 eig_sfrm = compute_eig(res_sfrm.margins, res_sfrm.w, res_sfrm.pip)
 plot_eig(eig_sfrm, 0.20; feature_names = feature_names,
-         title = "Expected Information Gain — SFRM  (τ = 0.20)")
+         title = "Expected Information Gain - SFRM  (τ = 0.20)")
 ```
 
 ```{julia}
 eig_lfrm = compute_eig(res_lfrm.margins, res_lfrm.w, res_lfrm.pip)
 plot_eig(eig_lfrm, 0.20; feature_names = feature_names,
-         title = "Expected Information Gain — LFRM  (τ = 0.20)")
+         title = "Expected Information Gain - LFRM  (τ = 0.20)")
 ```
 
 ```{julia}
@@ -217,81 +217,81 @@ println("LFRM active (EIG ≥ 0.20): ", feature_names[active_lfrm])
 
 ```{julia}
 plot_local_pips(res_lfrm; feature_names = feature_names,
-                title = "Per-Cluster Mean PIPs — LFRM")
+                title = "Per-Cluster Mean PIPs - LFRM")
 ```
 
 ### Subtype Feature Profiles
 
 ```{julia}
 plot_profiles(res_sfrm, dataset; feature_names = feature_names,
-              title = "Feature Profiles — SFRM")
+              title = "Feature Profiles - SFRM")
 ```
 
 ```{julia}
 plot_profiles(res_lfrm, dataset; feature_names = feature_names,
-              title = "Feature Profiles — LFRM")
+              title = "Feature Profiles - LFRM")
 ```
 
 Reading across rows recovers recognizable phenotypes: a low-eGFR cluster (impaired
 kidney function), a high-HbA1c cluster (hyperglycemia), BMI/WHtR-elevated clusters
-of differing severity — broadly consistent with @wang2026bayesian and
+of differing severity - broadly consistent with @wang2026bayesian and
 @lhoste2024cardiometabolic.
 
 ### Cluster Assignments in Feature Space
 
-BMI (feature 1) vs HbA1c (feature 9) — the two strongest discriminators.
+BMI (feature 1) vs HbA1c (feature 9) - the two strongest discriminators.
 
 ```{julia}
 plot_assignments(res_sfrm, dataset;
                  x_feature = 1, y_feature = 9,
                  feature_names = feature_names,
-                 title = "Cluster Assignments — SFRM (BMI vs HbA1c)")
+                 title = "Cluster Assignments - SFRM (BMI vs HbA1c)")
 ```
 
 ```{julia}
 plot_assignments(res_lfrm, dataset;
                  x_feature = 1, y_feature = 9,
                  feature_names = feature_names,
-                 title = "Cluster Assignments — LFRM (BMI vs HbA1c)")
+                 title = "Cluster Assignments - LFRM (BMI vs HbA1c)")
 ```
 
 ## Sex as a Feature, Not a Filter {#sec-sex-as-feature}
 
 It is standard practice to exclude sex by restricting the sample
-(@wang2026bayesian study males 40–59 only), because sex differences in body
+(@wang2026bayesian study males 40-59 only), because sex differences in body
 composition and cholesterol can dominate cluster formation. With `NaiveMFLFRMixDClust` you
 have another option: include `sex` as a Multinomial feature and let the relevance
 mechanism tell you directly whether it dominates.
 
 ```{julia}
 idx_sex = findfirst(==("sex"), feature_names)
-@printf("sex — SFRM: PIP = %.3f,  EIG = %.3f\n",
+@printf("sex - SFRM: PIP = %.3f,  EIG = %.3f\n",
         mean(res_sfrm.pip[:, idx_sex]), eig_sfrm[idx_sex])
-@printf("sex — LFRM: PIP = %.3f,  EIG = %.3f\n",
+@printf("sex - LFRM: PIP = %.3f,  EIG = %.3f\n",
         mean(res_lfrm.pip[:, idx_sex]), eig_lfrm[idx_sex])
 ```
 
-Under SFRM, `sex` has a high PIP — the model detects that sex should be modeled
-per cluster rather than pooled — but its EIG is low, indicating that despite being
+Under SFRM, `sex` has a high PIP - the model detects that sex should be modeled
+per cluster rather than pooled - but its EIG is low, indicating that despite being
 selected as relevant, it contributes modest discriminatory power between clusters
 overall. Under LFRM the picture is similar: EIG remains small. **This is itself an
 informative result.** Including `sex` does not distort the clustering: the dominant
 drivers (BMI, WHtR, HbA1c) emerge regardless, and the relevance mechanism reports,
 quantitatively, that the sex effect on cluster separation is limited. A relevance-aware
 model can accommodate a potentially confounding variable and answer the question
-directly — without requiring prior exclusion by design.
+directly - without requiring prior exclusion by design.
 
 ## Relating This to Published Work {#sec-nhanes-comparison}
 
 @wang2026bayesian fit a CAVI-based mixture model to a similar NHANES extract
-(pooled 1988–2018, males 40–59 only). Their likelihood treats every feature as fully
-informative in every cluster — no background/active switch, no relevance mechanism.
+(pooled 1988-2018, males 40-59 only). Their likelihood treats every feature as fully
+informative in every cluster - no background/active switch, no relevance mechanism.
 They fix $K=10$ a priori (from a separate K-means analysis), even though their
 posterior mixture weights show two components with negligible mass ($\pi \approx
 0.001$), and no quantitative diagnostic equivalent to PIP or EIG is available.
 
 Despite these differences, both analyses recover broadly the same phenotype
-categories — hyperglycemia-dominant, obesity/elevated-BMI, near-median "typical,"
+categories - hyperglycemia-dominant, obesity/elevated-BMI, near-median "typical,"
 lipid- or renal-marker-distinguished clusters. The comparison illustrates what an
 explicit relevance mechanism buys in practice: automatic order selection, a direct
 quantitative answer to "does this variable matter," and the ability to detect
@@ -300,9 +300,9 @@ redistributable cluster-specific effects.
 ## Takeaways
 
 - Fit **both** SFRM and LFRM as a matter of course; the comparison of which
-  features change EIG — and by how much — is informative in itself.
+  features change EIG - and by how much - is informative in itself.
 - Read **PIP** as "should this feature be modeled per cluster at all" and **EIG**
-  as "how much does that inclusion actually separate clusters" — they answer
+  as "how much does that inclusion actually separate clusters" - they answer
   different questions and can disagree (`sex` above has high PIP but low EIG; `smoking`
   is excluded entirely by SFRM despite being a plausible risk-factor a priori).
 - A relevance mechanism gives a real alternative to manually excluding a suspected

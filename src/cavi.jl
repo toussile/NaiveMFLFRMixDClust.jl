@@ -43,10 +43,10 @@ function _validate_input(data, K, u0, tol, delta_prior,
     end
 
     u0 > 0 || throw(ArgumentError("u0 must be > 0 (got $u0)."))
-    if u0 >= 1
-        @warn "u0 = $u0 ≥ 1: the Dirichlet prior is not sparse. " *
-              "Automatic order selection may not work reliably. " *
-              "Recommended range: u0 ∈ (0, 0.1]."
+    if u0 > 1 / K
+        @warn "u0 = $u0 > 1/K = $(round(1 / K, digits = 4)): the symmetric Dirichlet " *
+              "prior Dir(u0·1_K) on the mixing weights is not sparse. Automatic order " *
+              "selection may not work reliably. Recommended range: u0 ≤ 1/K."
     end
 
     tol > 0 || throw(ArgumentError("tol must be > 0 (got $tol)."))
@@ -240,7 +240,7 @@ function _cavi_once(data::AbstractVector, K::Int,
         if !isempty(bern_indices)
             psi_sum_alpha_init = digamma(sum(u_star))
             E_ln_omega_init    = [digamma(u_star[k]) - psi_sum_alpha_init for k in 1:K]
-            E_log_f_init       = [expected_log_density(margins[j], data[j]) for j in bern_indices]
+            E_log_f_init       = Matrix{Float64}[expected_log_density(margins[j], data[j]) for j in bern_indices]
             log_w_init         = Matrix{Float64}(undef, n, K)
             for k in 1:K, i in 1:n
                 log_w_init[i, k] = E_ln_omega_init[k] +
@@ -261,6 +261,19 @@ function _cavi_once(data::AbstractVector, K::Int,
         delta_star = copy(init.delta_star)
     end
 
+    return _cavi_loop!(data, K, model_setting, u0, d1, d0, max_iter, tol, beta_estimation,
+                       margins, w, pip, u_star, delta_star)
+end
+
+# CAVI iterations. Kept in a separate function (function barrier): the variables
+# below are assigned in both branches of the initialisation above, and capturing
+# them in closures there made them boxed and type-unstable (≈100× slower).
+function _cavi_loop!(data::AbstractVector, K::Int, model_setting::ModelSetting,
+                     u0, d1, d0, max_iter::Int, tol, beta_estimation::Symbol,
+                     margins::Vector{AbstractMargin}, w::Matrix{Float64},
+                     pip::Matrix{Float64}, u_star::Vector{Float64}, delta_star::Array{Float64})
+    p = length(data)
+    n = length(data[1])
     elbo_history = Float64[]
     omega_history = Vector{Vector{Float64}}()
 
@@ -270,7 +283,7 @@ function _cavi_once(data::AbstractVector, K::Int,
 
         # --- A. Parameter Expectations ---
         psi_sum_alpha = digamma(sum(u_star))
-        E_ln_omega    = [digamma(u_star[k]) - psi_sum_alpha for k in 1:K]
+        E_ln_omega    = digamma.(u_star) .- psi_sum_alpha
 
         E_ln_gamma = model_setting isa SFRM ?
                      Matrix{Float64}(undef, p, 2) :
@@ -290,8 +303,14 @@ function _cavi_once(data::AbstractVector, K::Int,
             end
         end
 
-        E_log_f = [expected_log_density(margins[j], data[j]) for j in 1:p]
-        log_f0  = [background_log_density(margins[j], data[j]) for j in 1:p]
+        E_log_f = Matrix{Float64}[expected_log_density(margins[j], data[j]) for j in 1:p]
+        log_f0  = Vector{Float64}[background_log_density(margins[j], data[j]) for j in 1:p]
+        # E_ln_gamma / delta_star are Matrix (SFRM) or 3-d Array (LFRM); typed aliases
+        # keep the hot loops below type-stable.
+        Eg2 = model_setting isa SFRM ? (E_ln_gamma::Matrix{Float64}) : zeros(0, 0)
+        Eg3 = model_setting isa SFRM ? zeros(0, 0, 0) : (E_ln_gamma::Array{Float64,3})
+        ds2 = model_setting isa SFRM ? (delta_star::Matrix{Float64}) : zeros(0, 0)
+        ds3 = model_setting isa SFRM ? zeros(0, 0, 0) : (delta_star::Array{Float64,3})
 
         # --- B. Update Latent Variables ---
 
@@ -306,7 +325,7 @@ function _cavi_once(data::AbstractVector, K::Int,
                 term_data = 0.0;  term_rel = 0.0
                 for j in 1:p
                     term_data += pip[i, j] * E_log_f[j][i, k]
-                    term_rel  += pip[i, j] * E_ln_gamma[k, j, 1] + (1.0 - pip[i, j]) * E_ln_gamma[k, j, 2]
+                    term_rel  += pip[i, j] * Eg3[k, j, 1] + (1.0 - pip[i, j]) * Eg3[k, j, 2]
                 end
                 log_w[i, k] = E_ln_omega[k] + term_data + term_rel
             end
@@ -324,7 +343,7 @@ function _cavi_once(data::AbstractVector, K::Int,
 
         if model_setting isa SFRM
             for j in 1:p
-                B_j = E_ln_gamma[j, 1] - E_ln_gamma[j, 2]
+                B_j = Eg2[j, 1] - Eg2[j, 2]
                 for i in 1:n
                     A_ij = sum(w[i, k] * E_log_f[j][i, k] for k in 1:K) - log_f0[j][i]
                     pip[i, j] = sigmoid(A_ij + B_j)
@@ -335,7 +354,7 @@ function _cavi_once(data::AbstractVector, K::Int,
                 A_ij = 0.0;  B_ij = 0.0
                 for k in 1:K
                     A_ij += w[i, k] * (E_log_f[j][i, k] - log_f0[j][i])
-                    B_ij += w[i, k] * (E_ln_gamma[k, j, 1] - E_ln_gamma[k, j, 2])
+                    B_ij += w[i, k] * (Eg3[k, j, 1] - Eg3[k, j, 2])
                 end
                 pip[i, j] = sigmoid(A_ij + B_ij)
             end
@@ -350,15 +369,15 @@ function _cavi_once(data::AbstractVector, K::Int,
         if model_setting isa SFRM
             for j in 1:p
                 sum_pip = sum(pip[:, j])
-                delta_star[j, 1] = d1 + sum_pip
-                delta_star[j, 2] = d0 + (n - sum_pip)
+                ds2[j, 1] = d1 + sum_pip
+                ds2[j, 2] = d0 + (n - sum_pip)
             end
         else
             for k in 1:K, j in 1:p
                 sum_w_pip = sum(w[i, k] * pip[i, j] for i in 1:n)
                 sum_w     = sum(w[:, k])
-                delta_star[k, j, 1] = d1 + sum_w_pip
-                delta_star[k, j, 2] = d0 + (sum_w - sum_w_pip)
+                ds3[k, j, 1] = d1 + sum_w_pip
+                ds3[k, j, 2] = d0 + (sum_w - sum_w_pip)
             end
         end
 
@@ -368,19 +387,19 @@ function _cavi_once(data::AbstractVector, K::Int,
         # update_margin! with these consistent parameters guarantees that the
         # ELBO sequence is monotonically non-decreasing.
         psi_sum_alpha = digamma(sum(u_star))
-        E_ln_omega    = [digamma(u_star[k]) - psi_sum_alpha for k in 1:K]
+        E_ln_omega    = digamma.(u_star) .- psi_sum_alpha
 
         if model_setting isa SFRM
             for j in 1:p
-                psi_sum = digamma(delta_star[j, 1] + delta_star[j, 2])
-                E_ln_gamma[j, 1] = digamma(delta_star[j, 1]) - psi_sum
-                E_ln_gamma[j, 2] = digamma(delta_star[j, 2]) - psi_sum
+                psi_sum = digamma(ds2[j, 1] + ds2[j, 2])
+                Eg2[j, 1] = digamma(ds2[j, 1]) - psi_sum
+                Eg2[j, 2] = digamma(ds2[j, 2]) - psi_sum
             end
         else
             for k in 1:K, j in 1:p
-                psi_sum = digamma(delta_star[k, j, 1] + delta_star[k, j, 2])
-                E_ln_gamma[k, j, 1] = digamma(delta_star[k, j, 1]) - psi_sum
-                E_ln_gamma[k, j, 2] = digamma(delta_star[k, j, 2]) - psi_sum
+                psi_sum = digamma(ds3[k, j, 1] + ds3[k, j, 2])
+                Eg3[k, j, 1] = digamma(ds3[k, j, 1]) - psi_sum
+                Eg3[k, j, 2] = digamma(ds3[k, j, 2]) - psi_sum
             end
         end
 
@@ -410,14 +429,15 @@ function _cavi_once(data::AbstractVector, K::Int,
             end
             for j in 1:p
                 if model_setting isa SFRM
-                    E_latent_prior += pip[i, j] * E_ln_gamma[j, 1] + (1.0 - pip[i, j]) * E_ln_gamma[j, 2]
+                    E_latent_prior += pip[i, j] * Eg2[j, 1] + (1.0 - pip[i, j]) * Eg2[j, 2]
                 else
-                    E_latent_prior += sum(w[i, k] * (pip[i, j] * E_ln_gamma[k, j, 1] +
-                                         (1.0 - pip[i, j]) * E_ln_gamma[k, j, 2]) for k in 1:K)
+                    E_latent_prior += sum(w[i, k] * (pip[i, j] * Eg3[k, j, 1] +
+                                         (1.0 - pip[i, j]) * Eg3[k, j, 2]) for k in 1:K)
                 end
             end
         end
 
+        # Prior Dir(ω; u0·1_K): concentration u0 per component
         KL_omega = loggamma(sum(u_star)) - loggamma(K * u0)
         for k in 1:K
             KL_omega += loggamma(u0) - loggamma(u_star[k]) +
@@ -428,13 +448,13 @@ function _cavi_once(data::AbstractVector, K::Int,
         KL_gamma  = 0.0
         if model_setting isa SFRM
             for j in 1:p
-                lbs = loggamma(delta_star[j,1]) + loggamma(delta_star[j,2]) - loggamma(delta_star[j,1]+delta_star[j,2])
-                KL_gamma += ln_beta_d - lbs + (delta_star[j,1]-d1)*E_ln_gamma[j,1] + (delta_star[j,2]-d0)*E_ln_gamma[j,2]
+                lbs = loggamma(ds2[j,1]) + loggamma(ds2[j,2]) - loggamma(ds2[j,1]+ds2[j,2])
+                KL_gamma += ln_beta_d - lbs + (ds2[j,1]-d1)*Eg2[j,1] + (ds2[j,2]-d0)*Eg2[j,2]
             end
         else
             for k in 1:K, j in 1:p
-                lbs = loggamma(delta_star[k,j,1]) + loggamma(delta_star[k,j,2]) - loggamma(delta_star[k,j,1]+delta_star[k,j,2])
-                KL_gamma += ln_beta_d - lbs + (delta_star[k,j,1]-d1)*E_ln_gamma[k,j,1] + (delta_star[k,j,2]-d0)*E_ln_gamma[k,j,2]
+                lbs = loggamma(ds3[k,j,1]) + loggamma(ds3[k,j,2]) - loggamma(ds3[k,j,1]+ds3[k,j,2])
+                KL_gamma += ln_beta_d - lbs + (ds3[k,j,1]-d1)*Eg3[k,j,1] + (ds3[k,j,2]-d0)*Eg3[k,j,2]
             end
         end
 
@@ -482,9 +502,10 @@ Fit a finite Bayesian mixture model via CAVI on heterogeneous data.
 - `model_setting`: [`SFRM()`](@ref) (shared relevance, one probability per feature)
   or [`LFRM()`](@ref) (local relevance, one probability per feature–cluster pair).
   Default: `SFRM()`.
-- `u0`: Symmetric Dirichlet hyperparameter `u⁽⁰⁾` for mixing weights.
-  Values well below 1 (e.g. `0.01`) induce sparsity and drive automatic order
-  selection. Default: `0.01`.
+- `u0`: Hyperparameter `u⁽⁰⁾` of the symmetric Dirichlet prior on the mixing weights,
+  whose concentration vector is `u⁽⁰⁾·1_K = (u⁽⁰⁾, …, u⁽⁰⁾)` (`K` = maximum number of
+  components). Values `u⁽⁰⁾ ≤ 1/K` make the prior sparse and drive automatic order
+  selection. Default: `nothing`, i.e. `u⁽⁰⁾ = 1/K`.
 - `delta_prior`: `(δ₁, δ₀)` hyperparameters of the Beta(`δ₁`, `δ₀`) prior on
   each relevance indicator. `(1.0, 1.0)` is a uniform prior. Default: `(1.0, 1.0)`.
 - `max_iter`: Maximum CAVI iterations for the final run. Default: `500`.
@@ -530,7 +551,7 @@ fitted margins, ELBO history, and variational parameters.
 """
 function mixClust(data::AbstractVector, K::Int;
                   model_setting::ModelSetting = SFRM(),
-                  u0                          = 0.01,
+                  u0                          = nothing,
                   delta_prior                 = (1.0, 1.0),
                   max_iter::Int               = 500,
                   tol                         = 1e-4,
@@ -539,6 +560,7 @@ function mixClust(data::AbstractVector, K::Int;
                   n_init::Int                 = 10,
                   max_iter_init::Int          = 10,
                   feature_types               = nothing)
+    u0 = isnothing(u0) ? 1.0 / K : u0   # default: u⁽⁰⁾ = 1/K
 
     # Resolve margin types first (needed by validation)
     resolved_types = _resolve_feature_types(data, feature_types)

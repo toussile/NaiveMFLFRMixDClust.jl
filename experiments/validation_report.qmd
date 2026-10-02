@@ -1,5 +1,5 @@
 ---
-title: "Validation Report — Revised Simulation Scenarios"
+title: "Validation Report - Revised Simulation Scenarios"
 subtitle: "Drafted in final article prose, for review before integration into the manuscript"
 format:
   pdf:
@@ -16,20 +16,20 @@ header-includes:
 ---
 
 This is a staging document, **not part of the manuscript**. All subsections below are
-written exactly as they are meant to appear in Section 5 of the paper — same notation, same
-crossref labels, same tone — so you can review the final prose directly rather than a summary
+written exactly as they are meant to appear in Section 5 of the paper - same notation, same
+crossref labels, same tone - so you can review the final prose directly rather than a summary
 of it. Changes from the previously integrated version reflected here:
 
 1. **Scenario 1 (Cluster Order Selection)** uses $n = 120$ for the $u^{(0)}$ sensitivity
    sweep: large enough to sit well within the stable plateau yet below the exact-recovery
    threshold, so the raw-CAVI / pruning contrast remains visible.
 2. **Scenario 5 (Background Parameter Estimation)** is repositioned as the **second** scenario
-   presented — right after Cluster Order Selection — so that the choice of $\bm{\beta}$
+   presented - right after Cluster Order Selection - so that the choice of $\bm{\beta}$
    estimation strategy is settled before the remaining scenarios rely on it as a fixed default.
    Its noise-ratio range is extended with a new point at $r = 8.0$.
 3. **Comparison with Li et al. (2009) has been dropped.** The two models rest on incompatible
-   modelling assumptions — our $\bm{\beta}$ is cluster-independent and estimated once from the
-   marginal, while Li et al. use cluster-specific $\bm{\beta}_{kj}$ — so a head-to-head
+   modelling assumptions - our $\bm{\beta}$ is cluster-independent and estimated once from the
+   marginal, while Li et al. use cluster-specific $\bm{\beta}_{kj}$ - so a head-to-head
    performance comparison would be semantically misleading. Li et al. (2009) is cited as related
    work in Section 2, not as a baseline.
 4. **Four new scenarios (A to D) are added** to demonstrate the contributions specific to our
@@ -50,10 +50,10 @@ subsection.
 $n$ observations are drawn from a mixture of $K_0$ balanced clusters of equal size $n/K_0$,
 with true labels $z_i \in \{1, \ldots, K_0\}$ assigned sequentially. The $J = J_{\text{act}}
 + J_{\text{noise}}$ features are partitioned into four equally-sized blocks of types Gaussian,
-Poisson, Multinomial, and Gamma — $J_{\text{act}}/4$ active and $J_{\text{noise}}/4$ noise
+Poisson, Multinomial, and Gamma - $J_{\text{act}}/4$ active and $J_{\text{noise}}/4$ noise
 features per type.
 
-### Active features — Model type 1 (global relevance)
+### Active features - Model type 1 (global relevance)
 
 Within each type, the $j$-th active feature ($j = 1, \ldots, J_{\text{act}}/4$) carries a
 signal strength scaled by $s_j = \max(1 - 0.25(j-1),\, 0.25)$, so that $s_1 = 1.00$,
@@ -83,7 +83,7 @@ and cluster-specific rate $\beta_k = 2 + s_j \times (\beta^*_k - 2)$,
 where $\bm{\beta}^* = (1, 5, 0.2)$.
 Noise features use $\beta_0 = 2$.
 
-### Active features — Model type 2 (heterogeneous local relevance)
+### Active features - Model type 2 (heterogeneous local relevance)
 
 Under model type 2, signal strength is uniform ($s_j = 1$ for all $j$) but relevance is
 cluster-dependent. Odd-indexed active features ($j = 1, 3, \ldots, J_{\text{act}} - 1$) are
@@ -144,7 +144,7 @@ three orders of magnitude. For $u^{(0)} \le 0.5$, the raw CAVI output already re
 true order exactly ($\widehat{K} = 3.00 \pm 0.00$) with ARI $\ge 0.997$ across all 20
 replications. A mild degradation appears only at $u^{(0)} \ge 1$, where the increasingly
 concentrated prior weakens the in-model self-pruning mechanism, raising $\widehat{K}$ to
-$3.05 \pm 0.22$ and lowering ARI to $0.995$–$0.996$. This flat response over the sparse
+$3.05 \pm 0.22$ and lowering ARI to $0.995$-$0.996$. This flat response over the sparse
 regime confirms that the choice of $u^{(0)}$ is not critical provided it remains below
 approximately $0.5$; we fix $u^{(0)} = 0.01$ for all subsequent experiments as a safe,
 reproducible default in the stable plateau. The behaviour is visually summarised in
@@ -231,7 +231,7 @@ CAVI output (prior alone) eventually achieve this without the pruning step?
 We generate mixed datasets ($J_{\text{act}} = 16$, $J_{\text{noise}} = 64$, $K_0 = 3$, model
 type 1) under the SFRM with $K_{\text{fit}} = 10$ and $u^{(0)} = 0.01$ over 20 independent
 replications, varying $n \in \{50, 80, 100, 150, 200, 300, 500, 750, 1000, 1500, 2000\}$. For
-each replication we run the solver twice — once with `prune = false` to isolate the prior's
+each replication we run the solver twice - once with `prune = false` to isolate the prior's
 self-pruning effect ($\widehat{K}_{\text{raw}}$), and once with the full pipeline
 ($\widehat{K}_{\text{pruned}}$). We report the overdetermination ratio
 $n / (K_0 \times J_{\text{act}})$, the exact-recovery rates, the mean estimated orders, and the
@@ -285,7 +285,7 @@ The threshold $n = 150$ must be appraised in the context of the model's paramete
 The full parameter space has dimension $K \times J = 3 \times 80 = 240$; even restricting to
 the active features, the effective dimension is $K \times J_{\text{act}} = 48$. A ratio
 $n / (K_0 J_{\text{act}}) \approx 3$ is genuinely modest by the standards of parametric mixture
-models, and the fact that a single variational fit — with no model-order search — suffices to
+models, and the fact that a single variational fit - with no model-order search - suffices to
 identify $K_0$ correctly at this sample size is a practically relevant property of the
 sparse-prior approach. The confirmation that $\widehat{K} = K_0$ is maintained through $n =
 500$ ($n / K_0 J_{\text{act}} = 10.4$) empirically validates the asymptotic convergence
@@ -334,14 +334,14 @@ columns (threshold $\tau = 0.20$) reflect the properties of the new EIG formula,
 pure discriminative power independently of the inclusion probability. As a consequence, noise
 features with non-trivial estimation variability can also exceed the threshold, producing high FDR
 ($0.76$ for the Full variant, $0.80$ for Gaussian-only). These figures confirm that $\tau = 0.20$
-is not calibrated as an FDR controller here — it is a threshold on importance magnitude, not on
+is not calibrated as an FDR controller here - it is a threshold on importance magnitude, not on
 inclusion probability. @sec-high-dim-fdr examines the complementary properties of PIP- and
 EIG-based criteria as dimension grows.
 
 ## Shared vs. Local Feature Relevance: SFRM vs. LFRM {#sec-sfrm-lfrm}
 
-We examine the ability of the two model variants — Shared Feature Relevance Model (SFRM) and
-Local Feature Relevance Model (LFRM) — to distinguish globally relevant features from features
+We examine the ability of the two model variants - Shared Feature Relevance Model (SFRM) and
+Local Feature Relevance Model (LFRM) - to distinguish globally relevant features from features
 whose discriminative value is cluster-specific. Following the design of @sec-sim-design
 (model type 2, $n = 240$, $J_{\text{act}} = 16$, $J_{\text{noise}} = 44$, $K_0 = 3$,
 $K_{\text{fit}} = 8$, $u^{(0)} = 0.01$, $N_{\text{rep}} = 20$), we report the mean Expected
@@ -378,7 +378,7 @@ parameter deviations in clusters where the feature is locally irrelevant, produc
 more targeted active EIG. The critical advantage appears in the noise column: LFRM achieves a
 noise EIG of only $0.302$ against $0.508$ for the SFRM, reflecting the local suppression
 mechanism that anchors noise-feature parameters near the background on a per-cluster basis.
-The resulting signal-to-noise ratio is $\rho = 43.99$ for LFRM versus $39.66$ for SFRM — a
+The resulting signal-to-noise ratio is $\rho = 43.99$ for LFRM versus $39.66$ for SFRM - a
 $11\%$ relative improvement that comes entirely from noise suppression rather than active
 feature inflation. When ranking features by EIG, the LFRM therefore provides a clearer
 separation between genuinely discriminative and irrelevant features, a property directly
@@ -386,9 +386,9 @@ observable in the real-data analyses of @sec-real-data.
 
 ## High-Dimensional FDR Control {#sec-high-dim-fdr}
 
-We evaluate the false-discovery behaviour of two feature-selection criteria — the mean Posterior
+We evaluate the false-discovery behaviour of two feature-selection criteria - the mean Posterior
 Inclusion Probability $\bar{\gamma}_j = n^{-1}\sum_i \gamma_{i,j}$ with threshold $0.5$, and
-the Expected Information Gain $\text{EIG}_j$ with threshold $0.20$ — as the ambient dimension
+the Expected Information Gain $\text{EIG}_j$ with threshold $0.20$ - as the ambient dimension
 $J$ grows while active features and sample size are held fixed. Following the design of
 @sec-sim-design (model type 1, LFRM), we fix $n = 150$, $K_0 = 3$, $K_{\text{fit}} = 6$,
 $J_{\text{act}} = 16$, $u^{(0)} = 0.01$, $N_{\text{rep}} = 20$, and vary
@@ -437,7 +437,7 @@ These properties establish the two criteria as serving orthogonal roles. PIP ($\
 \ge 0.5$) is the recommended feature selection criterion when $J/n \lesssim 1.5$ (i.e.,
 $J \le 200$ at $n = 150$), providing near-zero FDR. EIG ranks discriminative importance and
 identifies structurally relevant features that may be suppressed by a high-dimensional PIP
-— it complements selection but does not replace it. For very high $J/n$, both criteria degrade
+- it complements selection but does not replace it. For very high $J/n$, both criteria degrade
 and a regularised or cross-validated approach should be preferred.
 
 ## Application to Real-World Mixed Data {#sec-real-data}
@@ -451,10 +451,10 @@ compared.
 
 We analyse $n = 1\,431$ adults aged 40-59 from the 2017-2018 National Health and Nutrition
 Examination Survey (NHANES). The feature set comprises $J = 12$ variables: ten continuous
-cardiometabolic markers — body mass index (BMI), height, waist-to-height ratio (WHtR),
+cardiometabolic markers - body mass index (BMI), height, waist-to-height ratio (WHtR),
 systolic and diastolic blood pressure (SBP, DBP), pulse, HDL cholesterol, non-HDL cholesterol,
 glycated haemoglobin (HbA1c), and estimated glomerular filtration rate (eGFR), all standardised
-to zero mean and unit variance — and two multinomial features: sex (male/female, $C = 2$) and
+to zero mean and unit variance - and two multinomial features: sex (male/female, $C = 2$) and
 smoking status (never/former/current, $C = 3$). No ground-truth partition is available; the
 analysis is fully unsupervised.
 

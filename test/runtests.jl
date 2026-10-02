@@ -222,10 +222,18 @@ end
                 @test all(x -> x >= 0 && !isnan(x) && isfinite(x), P_j)
             end
             
-            # 2. Test predict_proba and predictive_log_likelihood
+            # 2. Test predict_proba, predict_pips, and predictive_log_likelihood
             w_pred = predict_proba(results, dataset)
             @test size(w_pred) == (n, K_max)
             @test all(x -> isapprox(sum(w_pred[x, :]), 1.0, atol=1e-6), 1:n)
+            
+            pips_pred = predict_pips(results, dataset)
+            @test size(pips_pred) == (n, p_total)
+            @test all(0.0 .<= pips_pred .<= 1.0)
+
+            pips_cond = predict_pips(results, dataset; conditional=true)
+            @test size(pips_cond) == (n, p_total, K_max)
+            @test all(0.0 .<= pips_cond .<= 1.0)
             
             log_lik = predictive_log_likelihood(results, dataset)
             @test isfinite(log_lik)
@@ -374,6 +382,28 @@ end
         @test res_dummy.inactivation_rate == rho
         z_rob = robust_cluster_assignments(res_dummy; threshold=0.7, mode=:inactivation_rate)
         @test z_rob == [1, 2, 0] # Obs 3 rejected to class 0
+
+        # Test extended_responsibilities and extended MAP mode
+        tau_mat = extended_responsibilities(res_dummy)
+        @test size(tau_mat) == (3, 3) # 3 obs, 1 background + 2 clusters
+        @test all(sum(tau_mat, dims=2) .≈ 1.0) # mass conservation
+        @test tau_mat[1, 1] < 0.01  # Obs 1 has nearly zero background mass
+        @test tau_mat[3, 1] > 0.70  # Obs 3 has dominant background mass
+        @test res_dummy.extended_responsibilities ≈ tau_mat
+
+        # Test default extended MAP assignments (mode=:map_tau)
+        z_map_tau = extended_cluster_assignments(res_dummy)
+        @test z_map_tau == [1, 2, 0] # Obs 3 isolated to background class 0
+        @test res_dummy.extended_labels == [1, 2, 0]
+
+        # Test calibrate_tau_inact and extended_cluster_assignments (:auto with inactivation rate)
+        tau_cal = calibrate_tau_inact(res_dummy; min_threshold=0.50)
+        @test tau_cal >= 0.50
+        z_ext_inact = extended_cluster_assignments(res_dummy; mode=:inactivation_rate, threshold=:auto)
+        @test length(z_ext_inact) == 3
+        @test z_ext_inact[1] == 1
+        @test z_ext_inact[2] == 2
+        @test detect_uninformative_observations(res_dummy; threshold=0.7) == Bool[false, false, true]
 
         # Test outlier_indices and cluster_indices helpers
         @test outlier_indices(res_dummy; threshold=0.7) == [3]

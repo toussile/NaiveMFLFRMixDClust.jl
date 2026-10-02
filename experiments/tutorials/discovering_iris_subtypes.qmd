@@ -26,7 +26,7 @@ per species. Four morphological features are measured for each flower: sepal len
 sepal width, petal length, and petal width (all in cm).
 
 This notebook uses `NaiveMFLFRMixDClust` to **cluster these 150 flowers without ever seeing the
-species labels** — treating the problem as a purely unsupervised task. We then
+species labels** - treating the problem as a purely unsupervised task. We then
 compare the discovered clusters against the true species to validate the result.
 Along the way, every diagnostic and visualization function in the package is
 demonstrated.
@@ -35,7 +35,7 @@ demonstrated.
 The point is not simply to recover three groups from a famous dataset. The point is
 to see what `NaiveMFLFRMixDClust` does automatically: it selects $K$ from scratch, decides
 which features actually drive the cluster structure, and produces interpretable
-subtype profiles — all from a single function call.
+subtype profiles - all from a single function call.
 :::
 
 ## Setup
@@ -65,7 +65,7 @@ for (j, col) in enumerate([:sepal_length, :sepal_width, :petal_length, :petal_wi
     dataset[j] = (v .- mean(v)) ./ std(v)
 end
 
-# True species labels (for validation only — never shown to the model)
+# True species labels (for validation only - never shown to the model)
 species_map = Dict("Iris-setosa" => 1, "Iris-versicolor" => 2, "Iris-virginica" => 3)
 labels_true = [species_map[s] for s in iris.species]
 
@@ -77,7 +77,7 @@ println("n = ", length(labels_true), ", K_true = ", length(unique(labels_true)))
 We start with $K_{\text{fit}} = 8$ components (deliberately over-specified) and let
 the sparse Dirichlet prior plus post-hoc pruning select the true $K$ automatically.
 
-### SFRM — Shared Feature Relevance Model
+### SFRM - Shared Feature Relevance Model
 
 Under `SFRM()`, each feature has a single relevance probability shared
 across all clusters: a feature is either relevant to the clustering or not,
@@ -99,10 +99,10 @@ K_sfrm = size(res_sfrm.w, 2)
         K_sfrm, length(res_sfrm.elbo_history))
 ```
 
-### LFRM — Local Feature Relevance Model
+### LFRM - Local Feature Relevance Model
 
 Under `LFRM()`, each feature can be relevant in some clusters but not in
-others — allowing finer, subgroup-specific signal.
+others - allowing finer, subgroup-specific signal.
 
 ```{julia}
 Random.seed!(42)
@@ -129,11 +129,11 @@ highlighted where they exist).
 ### Convergence
 
 ```{julia}
-plot_elbo(res_sfrm; title = "ELBO Convergence — SFRM")
+plot_elbo(res_sfrm; title = "ELBO Convergence - SFRM")
 ```
 
 ```{julia}
-plot_elbo(res_lfrm; title = "ELBO Convergence — LFRM")
+plot_elbo(res_lfrm; title = "ELBO Convergence - LFRM")
 ```
 
 A monotonically increasing curve reaching a plateau confirms that CAVI converged.
@@ -141,11 +141,11 @@ A monotonically increasing curve reaching a plateau confirms that CAVI converged
 ### Cluster Sizes
 
 ```{julia}
-plot_cluster_sizes(res_sfrm; title = "Cluster Sizes — SFRM")
+plot_cluster_sizes(res_sfrm; title = "Cluster Sizes - SFRM")
 ```
 
 ```{julia}
-plot_cluster_sizes(res_lfrm; title = "Cluster Sizes — LFRM")
+plot_cluster_sizes(res_lfrm; title = "Cluster Sizes - LFRM")
 ```
 
 With three balanced species of 50 flowers each, we expect roughly equal cluster
@@ -156,42 +156,42 @@ or dominated by one large group.
 
 ```{julia}
 plot_assignment_confidence(res_sfrm; threshold = 0.9,
-                           title = "Assignment Confidence — SFRM")
+                           title = "Assignment Confidence - SFRM")
 ```
 
 ```{julia}
 plot_assignment_confidence(res_lfrm; threshold = 0.9,
-                           title = "Assignment Confidence — LFRM")
+                           title = "Assignment Confidence - LFRM")
 ```
 
 A distribution concentrated near 1 means individuals are assigned crisply to a
-single cluster. A spread toward $1/K$ signals ambiguity — which is expected for
+single cluster. A spread toward $1/K$ signals ambiguity - which is expected for
 flowers that lie near a species boundary.
 
-### Feature Relevance — PIP
+### Feature Relevance - PIP
 
 ```{julia}
 plot_pips(res_sfrm; feature_names = feature_names,
-          title = "Posterior Inclusion Probabilities — SFRM")
+          title = "Posterior Inclusion Probabilities - SFRM")
 ```
 
 ```{julia}
 plot_pips(res_lfrm; feature_names = feature_names,
-          title = "Posterior Inclusion Probabilities — LFRM")
+          title = "Posterior Inclusion Probabilities - LFRM")
 ```
 
-### Feature Relevance — EIG
+### Feature Relevance - EIG
 
 ```{julia}
 eig_sfrm = compute_eig(res_sfrm.margins, res_sfrm.w, res_sfrm.pip)
 plot_eig(eig_sfrm, 0.20; feature_names = feature_names,
-         title = "Expected Information Gain — SFRM")
+         title = "Expected Information Gain - SFRM")
 ```
 
 ```{julia}
 eig_lfrm = compute_eig(res_lfrm.margins, res_lfrm.w, res_lfrm.pip)
 plot_eig(eig_lfrm, 0.20; feature_names = feature_names,
-         title = "Expected Information Gain — LFRM")
+         title = "Expected Information Gain - LFRM")
 ```
 
 Active features (EIG ≥ 0.20):
@@ -211,23 +211,23 @@ The EIG ranking should reflect this directly.
 
 ```{julia}
 plot_local_pips(res_lfrm; feature_names = feature_names,
-                title = "Per-Cluster Mean PIPs — LFRM")
+                title = "Per-Cluster Mean PIPs - LFRM")
 ```
 
 This plot is only meaningful for `LFRM()`. It reveals whether some features
-are relevant only in a subset of clusters — a finer picture than the global PIP bar
+are relevant only in a subset of clusters - a finer picture than the global PIP bar
 chart can provide.
 
 ### Subtype Feature Profiles
 
 ```{julia}
 plot_profiles(res_sfrm, dataset; feature_names = feature_names,
-              title = "Feature Profiles — SFRM")
+              title = "Feature Profiles - SFRM")
 ```
 
 ```{julia}
 plot_profiles(res_lfrm, dataset; feature_names = feature_names,
-              title = "Feature Profiles — LFRM")
+              title = "Feature Profiles - LFRM")
 ```
 
 Each cell shows the cluster's expected value as a z-score relative to the
@@ -242,14 +242,14 @@ distinct rows.
 plot_assignments(res_sfrm, dataset;
                  x_feature = 3, y_feature = 4,
                  feature_names = feature_names,
-                 title = "Cluster Assignments — SFRM (petal space)")
+                 title = "Cluster Assignments - SFRM (petal space)")
 ```
 
 ```{julia}
 plot_assignments(res_lfrm, dataset;
                  x_feature = 3, y_feature = 4,
                  feature_names = feature_names,
-                 title = "Cluster Assignments — LFRM (petal space)")
+                 title = "Cluster Assignments - LFRM (petal space)")
 ```
 
 Petal length and petal width (features 3 and 4) are the most discriminative; the
@@ -306,7 +306,7 @@ println("───────────────────────�
 
 An ARI close to 1 on Iris is a strong sanity check: it confirms that
 `mixClust` correctly recovered three groups, selected $K$ automatically from
-$K_{\text{fit}} = 8$, and identified petal features as the primary drivers —
+$K_{\text{fit}} = 8$, and identified petal features as the primary drivers -
 consistent with decades of botanical literature on this dataset.
 
 ## Out-of-Sample Prediction
@@ -324,7 +324,7 @@ res_train = mixClust(train_data, 8;
 
 w_test = predict_subtypes(res_train, test_data)
 
-println("Held-out flowers — predicted cluster probabilities (top column = dominant cluster):")
+println("Held-out flowers - predicted cluster probabilities (top column = dominant cluster):")
 for i in 1:15
     dom = argmax(w_test[i, :])
     @printf("  flower %3d (true: %s)  →  cluster %d  (confidence %.3f)\n",
@@ -336,7 +336,7 @@ end
 
 - `mixClust` recovered $K = 3$ automatically from $K_{\text{fit}} = 8$.
 - Petal length and petal width were flagged as the most informative features
-  by both PIP and EIG — consistent with the known biology of the dataset.
+  by both PIP and EIG - consistent with the known biology of the dataset.
 - Sepal width received low EIG, correctly identified as near-noise for separating
   these three species.
 - `predict_subtypes` assigns held-out flowers to the learned clusters with high

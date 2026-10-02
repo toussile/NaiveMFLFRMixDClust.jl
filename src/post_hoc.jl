@@ -201,6 +201,62 @@ function predictive_log_likelihood(results::MixClustResult, new_data::AbstractVe
     return total_log_lik
 end
 
+"""
+    predict_pips(results::MixClustResult, new_data::AbstractVector; conditional::Bool=false)
+
+Compute out-of-sample feature Posterior Inclusion Probabilities (PIPs) for unobserved data:
+- If `conditional=false` (default): returns an `(n_new × p)` matrix of marginal predictive PIPs:
+    \$p(\\widetilde{s}_j = 1 \\mid \\widetilde{\\bm{y}}, \\bm{y}) = \\sum_{k=1}^K p(\\widetilde{z} = k \\mid \\widetilde{\\bm{y}}, \\bm{y}) \\, p(\\widetilde{s}_j = 1 \\mid \\widetilde{z} = k, \\widetilde{\\bm{y}}, \\bm{y})\$
+- If `conditional=true`: returns an `(n_new × p × K)` array of cluster-conditional predictive PIPs:
+    \$p(\\widetilde{s}_j = 1 \\mid \\widetilde{z} = k, \\widetilde{\\bm{y}}, \\bm{y}) = \\frac{\\bar{\\gamma}_{k,j} p_k(\\widetilde{y}_j)}{\\bar{\\gamma}_{k,j} p_k(\\widetilde{y}_j) + (1 - \\bar{\\gamma}_{k,j}) p_0(\\widetilde{y}_j)}\$
+"""
+function predict_pips(results::MixClustResult, new_data::AbstractVector; conditional::Bool=false)
+    p = length(results.margins)
+    n_new = length(new_data[1])
+    K = length(results.u_star)
+
+    gamma_bar = Matrix{Float64}(undef, K, p)
+    if ndims(results.delta_star) == 2
+        for j in 1:p
+            g = results.delta_star[j, 1] / (results.delta_star[j, 1] + results.delta_star[j, 2])
+            gamma_bar[:, j] .= g
+        end
+    else
+        for k in 1:K
+            for j in 1:p
+                gamma_bar[k, j] = results.delta_star[k, j, 1] / (results.delta_star[k, j, 1] + results.delta_star[k, j, 2])
+            end
+        end
+    end
+
+    P = [predictive_density(results.margins[j], new_data[j]) for j in 1:p]
+    B = [exp.(background_log_density(results.margins[j], new_data[j])) for j in 1:p]
+
+    # Cluster-conditional PIPs: n_new × p × K
+    cond_pips = Array{Float64, 3}(undef, n_new, p, K)
+    for k in 1:K, j in 1:p, i in 1:n_new
+        num = gamma_bar[k, j] * P[j][i, k]
+        den = num + (1.0 - gamma_bar[k, j]) * B[j][i]
+        cond_pips[i, j, k] = den > 0.0 ? clamp(num / den, 0.0, 1.0) : gamma_bar[k, j]
+    end
+
+    if conditional
+        return cond_pips
+    end
+
+    # Marginal PIPs: weighted by predictive responsibilities
+    w_pred = predict_proba(results, new_data) # n_new × K
+    marg_pips = Matrix{Float64}(undef, n_new, p)
+    for i in 1:n_new, j in 1:p
+        val = 0.0
+        for k in 1:K
+            val += w_pred[i, k] * cond_pips[i, j, k]
+        end
+        marg_pips[i, j] = clamp(val, 0.0, 1.0)
+    end
+    return marg_pips
+end
+
 
 """
     n_active_clusters(w; threshold=0.02) -> Int
@@ -399,18 +455,118 @@ detect_outliers(results::MixClustResult; threshold::Real=0.55, mode::Symbol=:ina
     detect_outliers(results.pip; threshold=threshold, mode=mode)
 
 """
-    robust_cluster_assignments(results::MixClustResult; threshold::Real=0.55, mode::Symbol=:inactivation_rate) -> Vector{Int}
+    calibrate_tau_inact(pip::AbstractMatrix, pi_0::Real; min_threshold::Real=0.50) -> Float64
+    calibrate_tau_inact(results::MixClustResult; min_threshold::Real=0.50) -> Float64
 
-Returns robust cluster assignments \$\\widehat{z}_i^{\\mathrm{robust}} \\in \\{0, 1, \\dots, K\\}\$, where:
-- `0` indicates an anomalous observation rejected as background noise,
-- `k \\in \\{1, \\dots, K\\}` indicates assignment to cluster `k` via standard MAP.
+Calibrates the coordinate inactivation threshold \$\\tau_{\\mathrm{inact}}\$ adaptively from the estimated
+background proportion \$\\bar{\\pi}_0\$ derived in Proposition 1 and Section 4.1:
+    \$\\tau_{\\mathrm{inact}} = \\max\\left(\\text{min\\_threshold}, \\mathrm{Quantile}_{1 - \\bar{\\pi}_0}(\\{\\bar{\\rho}_1, \\dots, \\bar{\\rho}_n\\})\\right)\$
 """
-function robust_cluster_assignments(results::MixClustResult; threshold::Real=0.55, mode::Symbol=:inactivation_rate)
-    is_outlier = detect_outliers(results; threshold=threshold, mode=mode)
-    z_robust = copy(results.labels)
-    z_robust[is_outlier] .= 0
-    return z_robust
+function calibrate_tau_inact(pip::AbstractMatrix, pi_0::Real; min_threshold::Real=0.50)
+    rho = coordinate_inactivation_rate(pip)
+    q_level = clamp(1.0 - Float64(pi_0), 0.0, 1.0)
+    tau_q = quantile(rho, q_level)
+    return max(Float64(min_threshold), tau_q)
 end
+
+function calibrate_tau_inact(results::MixClustResult; min_threshold::Real=0.50)
+    pi_0 = compute_pi_0(results)
+    return calibrate_tau_inact(results.pip, pi_0; min_threshold=min_threshold)
+end
+
+"""
+    detect_uninformative_observations(results::MixClustResult; threshold::Union{Real, Symbol}=:auto, min_threshold::Real=0.50, mode::Symbol=:inactivation_rate) -> BitVector
+    detect_uninformative_observations(pip::AbstractMatrix, pi_0::Real; threshold::Union{Real, Symbol}=:auto, min_threshold::Real=0.50, mode::Symbol=:inactivation_rate) -> BitVector
+
+Identifies observations belonging to the uninformative background class (\$z_i = 0\$).
+When `threshold=:auto`, it dynamically calibrates \$\\tau_{\\mathrm{inact}}\$ using `calibrate_tau_inact`.
+"""
+function detect_uninformative_observations(pip::AbstractMatrix, pi_0::Real; threshold::Union{Real, Symbol}=:auto, min_threshold::Real=0.50, mode::Symbol=:inactivation_rate)
+    thresh_val = if threshold === :auto
+        calibrate_tau_inact(pip, pi_0; min_threshold=min_threshold)
+    else
+        Float64(threshold)
+    end
+    return detect_outliers(pip; threshold=thresh_val, mode=mode)
+end
+
+function detect_uninformative_observations(results::MixClustResult; threshold::Union{Real, Symbol}=:auto, min_threshold::Real=0.50, mode::Symbol=:inactivation_rate)
+    pi_0 = compute_pi_0(results)
+    return detect_uninformative_observations(results.pip, pi_0; threshold=threshold, min_threshold=min_threshold, mode=mode)
+end
+
+"""
+    extended_responsibilities(w::AbstractMatrix, pip::AbstractMatrix) -> Matrix{Float64}
+    extended_responsibilities(results::MixClustResult) -> Matrix{Float64}
+
+Compute the \$(K+1)\$-component extended posterior classification responsibilities
+\$(\\tau_{i,0}, \\tau_{i,1}, \\dots, \\tau_{i,K})\$ defined in Proposition 1 of the manuscript:
+    \$\\tau_{i,0} = \\prod_{j=1}^p (1 - \\varphi_{i,j}^*)\$
+    \$\\tau_{i,k} = w_{i,k}^* \\left( 1 - \\tau_{i,0} \\right), \\quad k \\in \\{1, \\dots, K\\}\$
+satisfying the conservation of total probability mass:
+    \$\\tau_{i,0} + \\sum_{k=1}^K \\tau_{i,k} = 1\$.
+
+The first column corresponds to the uninformative background class (\$k = 0\$), while
+subsequent columns \$2, \\dots, K+1\$ correspond to substantive clusters \$1, \\dots, K\$.
+"""
+function extended_responsibilities(w::AbstractMatrix, pip::AbstractMatrix)
+    n, K = size(w)
+    n_p, p = size(pip)
+    @assert n == n_p "Number of observations in w ($n) and pip ($n_p) must match."
+
+    tau = Matrix{Float64}(undef, n, K + 1)
+    @inbounds for i in 1:n
+        log_prod = 0.0
+        for j in 1:p
+            log_prod += log(clamp(1.0 - pip[i, j], 1e-15, 1.0))
+        end
+        tau_0 = exp(log_prod)
+        tau[i, 1] = tau_0
+        rem_mass = max(1.0 - tau_0, 0.0)
+        for k in 1:K
+            tau[i, k + 1] = w[i, k] * rem_mass
+        end
+    end
+    return tau
+end
+
+extended_responsibilities(results::MixClustResult) = extended_responsibilities(results.w, results.pip)
+
+"""
+    extended_cluster_assignments(results::MixClustResult; mode::Symbol=:map_tau, threshold::Union{Real, Symbol}=:auto, min_threshold::Real=0.50) -> Vector{Int}
+
+Returns the extended cluster assignments \$\\widehat{z}_i^{\\star} \\in \\{0, 1, \\dots, \\widehat{K}\\}\$, where:
+- `0` indicates an uninformative background observation,
+- `k \\in \\{1, \\dots, \\widehat{K}\\}` indicates assignment to substantive cluster `k`.
+
+# Modes
+- `:map_tau` (default): Optimal Bayesian MAP assignment based on extended responsibilities \$\\tau_{i,k}\$:
+    \$\\widehat{z}_i^{\\star} = \\arg\\max_{k \\in \\{0, 1, \\dots, K\\}} \\tau_{i,k}\$.
+- `:inactivation_rate`: Assignment based on coordinate inactivation rate \$\\bar{\\rho}_i \\ge \\tau_{\\mathrm{inact}}\$.
+- `:map_strict`: Flagged as class 0 if all \$\\varphi_{i,j}^* < 0.5\$.
+- `:map_relaxed`: Flagged as class 0 if the fraction of inactive coordinates is \$\\ge \\text{threshold}\$.
+"""
+function extended_cluster_assignments(results::MixClustResult; mode::Symbol=:map_tau, threshold::Union{Real, Symbol}=:auto, min_threshold::Real=0.50)
+    if mode === :map_tau
+        tau = extended_responsibilities(results)
+        n, K_plus_1 = size(tau)
+        z_star = Vector{Int}(undef, n)
+        @inbounds for i in 1:n
+            max_idx = argmax(view(tau, i, :))
+            z_star[i] = max_idx - 1 # map column 1 -> class 0, column 2..K+1 -> cluster 1..K
+        end
+        return z_star
+    else
+        is_uninformative = detect_uninformative_observations(results; threshold=threshold, min_threshold=min_threshold, mode=mode)
+        z_star = copy(results.labels)
+        z_star[is_uninformative] .= 0
+        return z_star
+    end
+end
+
+# Canonical aliases
+const robust_cluster_assignments = extended_cluster_assignments
+
 
 """
     compute_pi_0(results::MixClustResult) -> Float64
