@@ -37,9 +37,11 @@ export compute_ehd, compute_local_ehd, compute_eig, compute_local_eig
 export filter_features, adjusted_rand_index
 export predict_proba, predict_pips, predictive_log_likelihood, compact_clusters
 export n_active_clusters
-export coordinate_inactivation_rate, detect_outliers, robust_cluster_assignments
+export coordinate_inactivation_rate
 export calibrate_tau_inact, detect_uninformative_observations, extended_cluster_assignments, extended_responsibilities
-export compute_pi_0, outlier_indices, cluster_indices
+export compute_pi_0, uninformative_indices, cluster_indices
+# Deprecated names, kept for one release
+export detect_outliers, outlier_indices, robust_cluster_assignments
 export plot_elbo, plot_pips, plot_ehd, plot_eig, plot_assignments, plot_profiles
 export plot_cluster_sizes, plot_assignment_confidence, plot_local_pips, plot_local_ehd, plot_local_eig
 export plot_mixing_weights_evolution, plot_omega_history

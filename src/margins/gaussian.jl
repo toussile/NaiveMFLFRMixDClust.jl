@@ -18,8 +18,10 @@ end
 
 function GaussianMargin(y_j::AbstractVector, K::Int; 
                         mu_0=nothing, kappa_0=0.05, a_0=3.0, b_0=nothing,
-                        robust::Bool=true)
-    if robust
+                        median_based::Bool=true,
+                        robust::Union{Nothing, Bool}=nothing)
+    median_based = _background_flag(median_based, robust, :median_based, :GaussianMargin)
+    if median_based
         med = Float64(median(y_j))
         mad_val = 1.4826 * Float64(median(abs.(y_j .- med)))
         sigma_bg = mad_val > 1e-6 ? mad_val : (std(y_j) > 1e-6 ? Float64(std(y_j)) : 1.0)

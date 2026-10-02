@@ -85,5 +85,10 @@ function hellinger_divergence(margin::AbstractMargin)
     error("hellinger_divergence not implemented for type $(typeof(margin))")
 end
 
-
-
+# Background-calibration flag of the margin constructors (`median_based` / `smoothed`).
+# `robust` is its former name, still accepted with a deprecation warning.
+function _background_flag(value::Bool, robust::Union{Nothing, Bool}, name::Symbol, ctor::Symbol)
+    robust === nothing && return value
+    Base.depwarn("keyword `robust` of `$ctor` is deprecated, use `$name`.", ctor)
+    return robust
+end

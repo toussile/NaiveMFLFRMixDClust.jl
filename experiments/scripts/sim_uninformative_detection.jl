@@ -1,4 +1,4 @@
-# Simulation study: Outlier Detection and Robust Clustering on Mixed-Type Data
+# Simulation study: Detection of Uninformative Observations on Mixed-Type Data
 # NaiveMFLFRMixDClust.jl
 using Pkg
 Pkg.activate(joinpath(@__DIR__, "..", ".."))
@@ -8,7 +8,7 @@ using Statistics
 using Printf
 
 println("="^75)
-println("  MONTE CARLO SIMULATION: OUTLIER DETECTION & ORDER ROBUSTNESS (MIXED DATA)")
+println("  MONTE CARLO SIMULATION: UNINFORMATIVE-OBSERVATION DETECTION & ORDER SELECTION (MIXED DATA)")
 println("="^75)
 
 function rand_multinomial(rng, N, p_vec)
@@ -32,23 +32,23 @@ rand_gamma(rng, shape, rate) = -sum(log(rand(rng)) for _ in 1:round(Int, shape))
 
 R = 20
 n_in = 120
-n_out = 15 # ~11% contamination
-n_total = n_in + n_out
+n_uninf = 15 # ~11% uninformative observations
+n_total = n_in + n_uninf
 p = 8
 tau_eval = 0.58
 
 k_selected = Int[]
 ari_standard = Float64[]
-ari_robust = Float64[]
+ari_ext = Float64[]
 tpr_tau = Float64[]
 fpr_tau = Float64[]
 tpr_strict = Float64[]
 
-inlier_idx = 1:n_in
-outlier_idx = (n_in + 1):n_total
-labels_true = vcat(fill(1, 40), fill(2, 40), fill(3, 40), fill(0, n_out))
+informative_idx = 1:n_in
+uninf_idx = (n_in + 1):n_total
+labels_true = vcat(fill(1, 40), fill(2, 40), fill(3, 40), fill(0, n_uninf))
 
-println("Configuration: R = $R replications, n = $n_total ($n_in inliers across 3 clusters, $n_out outliers), p = 8 mixed features.")
+println("Configuration: R = $R replications, n = $n_total ($n_in informative observations across 3 clusters, $n_uninf uninformative), p = 8 mixed features.")
 println("Features: 4 active (Gaussian, Poisson, Multinomial, Gamma) + 4 noise (Gaussian, Poisson, Multinomial, Gamma).")
 println("-"^75)
 
@@ -75,15 +75,15 @@ for rep in 1:R
     # 8. Noise Gamma
     y8_in = [rand_gamma(rng, 2, 2.0) for _ in 1:n_in]
     
-    # Outliers: background noise across all 8 features
-    y1_out = randn(rng, n_out)
-    y2_out = randn(rng, n_out)
-    y3_out = Float64[rand_poisson(rng, 6.0) for _ in 1:n_out]
-    y4_out = Float64[rand_poisson(rng, 4.0) for _ in 1:n_out]
-    y5_out = [rand_multinomial(rng, 15, [0.33, 0.33, 0.34]) for _ in 1:n_out]
-    y6_out = [rand_multinomial(rng, 15, [0.33, 0.33, 0.34]) for _ in 1:n_out]
-    y7_out = [rand_gamma(rng, 2, 2.0) for _ in 1:n_out]
-    y8_out = [rand_gamma(rng, 2, 2.0) for _ in 1:n_out]
+    # Uninformative observations: background noise across all 8 features
+    y1_out = randn(rng, n_uninf)
+    y2_out = randn(rng, n_uninf)
+    y3_out = Float64[rand_poisson(rng, 6.0) for _ in 1:n_uninf]
+    y4_out = Float64[rand_poisson(rng, 4.0) for _ in 1:n_uninf]
+    y5_out = [rand_multinomial(rng, 15, [0.33, 0.33, 0.34]) for _ in 1:n_uninf]
+    y6_out = [rand_multinomial(rng, 15, [0.33, 0.33, 0.34]) for _ in 1:n_uninf]
+    y7_out = [rand_gamma(rng, 2, 2.0) for _ in 1:n_uninf]
+    y8_out = [rand_gamma(rng, 2, 2.0) for _ in 1:n_uninf]
     
     data = [
         vcat(y1_in, y1_out), vcat(y2_in, y2_out),
@@ -104,24 +104,24 @@ for rep in 1:R
     k_est = res.n_clusters
     push!(k_selected, k_est)
     
-    # Baseline ARI (standard MAP ignoring outliers)
+    # Baseline ARI (standard MAP, no class 0)
     push!(ari_standard, adjusted_rand_index(labels_true, res.labels))
     
-    # Outlier detection with inactivation rate
-    d_tau = detect_outliers(res; threshold=tau_eval, mode=:inactivation_rate)
-    push!(tpr_tau, mean(d_tau[outlier_idx]))
-    push!(fpr_tau, mean(d_tau[inlier_idx]))
+    # Detection of uninformative observations (inactivation rate)
+    d_tau = detect_uninformative_observations(res; threshold=tau_eval, mode=:inactivation_rate)
+    push!(tpr_tau, mean(d_tau[uninf_idx]))
+    push!(fpr_tau, mean(d_tau[informative_idx]))
     
     # Strict MAP rule
-    d_strict = detect_outliers(res; mode=:map_strict)
-    push!(tpr_strict, mean(d_strict[outlier_idx]))
+    d_strict = detect_uninformative_observations(res; mode=:map_strict)
+    push!(tpr_strict, mean(d_strict[uninf_idx]))
     
-    # Robust assignment ARI
-    z_rob = robust_cluster_assignments(res; threshold=tau_eval, mode=:inactivation_rate)
-    push!(ari_robust, adjusted_rand_index(labels_true, z_rob))
+    # Extended assignment ARI
+    z_ext = extended_cluster_assignments(res; threshold=tau_eval, mode=:inactivation_rate)
+    push!(ari_ext, adjusted_rand_index(labels_true, z_ext))
     
     @printf("Rep %2d: K_hat = %d | TPR(tau=%.2f) = %5.1f%% | FPR = %4.1f%% | ARI: %.3f -> %.3f\n",
-            rep, k_est, tau_eval, 100*tpr_tau[end], 100*fpr_tau[end], ari_standard[end], ari_robust[end])
+            rep, k_est, tau_eval, 100*tpr_tau[end], 100*fpr_tau[end], ari_standard[end], ari_ext[end])
 end
 
 println("-"^75)
@@ -129,13 +129,13 @@ println("  MONTE CARLO SYNTHESIS ($R REPLICATIONS)")
 println("-"^75)
 println("Order selection: K* = 3 selected in $(count(==(3), k_selected)) / $R reps ($(round(100*count(==(3), k_selected)/R, digits=1))%)")
 println("Mean estimated K: $(round(mean(k_selected), digits=2)) ± $(round(std(k_selected), digits=2))")
-println("Outlier Detection (tau = $tau_eval):")
+println("Detection of uninformative observations (tau = $tau_eval):")
 println("  Mean Detection Rate (TPR): $(round(100*mean(tpr_tau), digits=1))% ± $(round(100*std(tpr_tau), digits=1))%")
 println("  Mean False Alarm Rate (FPR): $(round(100*mean(fpr_tau), digits=1))% ± $(round(100*std(fpr_tau), digits=1))%")
 println("Strict MAP rule (all phi < 0.5):")
 println("  Mean TPR:                  $(round(100*mean(tpr_strict), digits=1))%")
 println("Partition Accuracy (Global ARI vs true partition including class 0):")
 println("  Standard MAP:              $(round(mean(ari_standard), digits=4)) ± $(round(std(ari_standard), digits=4))")
-println("  Robust MAP (with rejection):$(round(mean(ari_robust), digits=4)) ± $(round(std(ari_robust), digits=4))")
-println("  Net ARI Gain:              +$(round(mean(ari_robust) - mean(ari_standard), digits=4))")
+println("  Extended MAP (class 0):$(round(mean(ari_ext), digits=4)) ± $(round(std(ari_ext), digits=4))")
+println("  Net ARI Gain:              +$(round(mean(ari_ext) - mean(ari_standard), digits=4))")
 println("="^75)

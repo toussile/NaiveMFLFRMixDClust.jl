@@ -12,8 +12,10 @@ mutable struct PoissonMargin <: AbstractMargin
 end
 
 function PoissonMargin(y_j::AbstractVector, K::Int; 
-                       a_0=2.0, b_0=nothing, robust::Bool=true)
-    if robust
+                       a_0=2.0, b_0=nothing, median_based::Bool=true,
+                                             robust::Union{Nothing, Bool}=nothing)
+    median_based = _background_flag(median_based, robust, :median_based, :PoissonMargin)
+    if median_based
         med = Float64(median(y_j))
         if med > 0
             lambda_bg = max(0.1, med)

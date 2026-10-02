@@ -1,6 +1,6 @@
 name = "NaiveMFLFRMixDClust"
 uuid = "69d30006-2581-4209-b633-8a07f0bb891b"
-version = "0.4.0"
+version = "0.5.0"
 authors = ["Wilson Toussile", "Simeon Fotso", "Patrice Takam Soh"]
 
 [deps]

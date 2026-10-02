@@ -7,6 +7,34 @@ new features bump MINOR, bug fixes bump PATCH.
 
 ---
 
+## [0.5.0] - 2026-10-02
+
+### Renamed (terminology: uninformative observations, not robust clustering)
+
+The package no longer refers to outliers or robust clustering: observations flagged by
+the coordinate inactivation rate are *uninformative* (background class 0). Old names
+still work for one release and emit a deprecation warning.
+
+| Old (deprecated) | New |
+|---|---|
+| `detect_outliers` | `detect_uninformative_observations` (new method taking only `pip`) |
+| `outlier_indices` | `uninformative_indices` |
+| `robust_cluster_assignments` | `extended_cluster_assignments` |
+| `cluster_indices(...; robust=...)` | `cluster_indices(...; exclude_uninformative=...)` |
+| margin keyword `robust` | `median_based` (Gaussian, LogNormal, Exponential, Gamma, Poisson), `smoothed` (Bernoulli, Multinomial) |
+
+- Experiment files renamed: `05_outlier_absorption.jl` → `05_uninformative_absorption.jl`,
+  `sim_outlier_detection.jl` → `sim_uninformative_detection.jl`; scripts, tests and
+  docstrings updated accordingly.
+
+### Bug fixes
+
+- `cluster_indices(...; exclude_uninformative=true)` applies `threshold` again (since 0.4.0,
+  the call went through the `:map_tau` rule, which ignores the threshold).
+- The error message for an unknown detection mode now shows the mode.
+
+---
+
 ## [0.4.0] - 2026-10-02
 
 ### Breaking changes

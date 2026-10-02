@@ -340,11 +340,11 @@ end
         @test all(!isnan, res_iter2.elbo_history)
     end
 
-    @testset "Outlier Detection and Robust Assignments" begin
+    @testset "Uninformative Observations and Extended Assignments" begin
         # Synthetic PIP matrix: 3 individuals, 4 features
-        # Obs 1: inlier (all features active)
+        # Obs 1: informative (all features active)
         # Obs 2: partial/noise
-        # Obs 3: outlier (all features inactive)
+        # Obs 3: uninformative (all features inactive)
         pip_test = [0.9 0.95 0.85 0.9;
                     0.6 0.4  0.7  0.3;
                     0.05 0.1 0.02 0.08]
@@ -355,18 +355,18 @@ end
         @test rho[3] > 0.9
         
         # 1. Inactivation rate threshold
-        out_rho = detect_outliers(pip_test; threshold=0.7, mode=:inactivation_rate)
+        out_rho = detect_uninformative_observations(pip_test; threshold=0.7, mode=:inactivation_rate)
         @test out_rho == Bool[false, false, true]
         
         # 2. Strict MAP (all phi < 0.5)
-        out_strict = detect_outliers(pip_test; mode=:map_strict)
+        out_strict = detect_uninformative_observations(pip_test; mode=:map_strict)
         @test out_strict == Bool[false, false, true]
         
         # 3. Relaxed MAP (proportion < 0.5 >= 0.75)
-        out_relaxed = detect_outliers(pip_test; threshold=0.75, mode=:map_relaxed)
+        out_relaxed = detect_uninformative_observations(pip_test; threshold=0.75, mode=:map_relaxed)
         @test out_relaxed == Bool[false, false, true]
         
-        # Test robust_cluster_assignments with MixClustResult
+        # Test extended_cluster_assignments with MixClustResult
         dummy_margins = [GaussianMargin(randn(20), 2) for _ in 1:4]
         res_dummy = MixClustResult(
             [0.9 0.1; 0.2 0.8; 0.6 0.4], # w
@@ -380,8 +380,8 @@ end
         
         @test coordinate_inactivation_rate(res_dummy) == rho
         @test res_dummy.inactivation_rate == rho
-        z_rob = robust_cluster_assignments(res_dummy; threshold=0.7, mode=:inactivation_rate)
-        @test z_rob == [1, 2, 0] # Obs 3 rejected to class 0
+        z_inact = extended_cluster_assignments(res_dummy; threshold=0.7, mode=:inactivation_rate)
+        @test z_inact == [1, 2, 0] # Obs 3 assigned to background class 0
 
         # Test extended_responsibilities and extended MAP mode
         tau_mat = extended_responsibilities(res_dummy)
@@ -405,11 +405,17 @@ end
         @test z_ext_inact[2] == 2
         @test detect_uninformative_observations(res_dummy; threshold=0.7) == Bool[false, false, true]
 
-        # Test outlier_indices and cluster_indices helpers
+        # Test uninformative_indices and cluster_indices helpers
+        @test uninformative_indices(res_dummy; threshold=0.7) == [3]
+        @test cluster_indices(res_dummy, 1; exclude_uninformative=false) == [1, 3]
+        @test cluster_indices(res_dummy, 1; threshold=0.7, exclude_uninformative=true) == [1]
+        @test cluster_indices(res_dummy, 2; exclude_uninformative=true) == [2]
+
+        # Deprecated names still give the same results
+        @test detect_outliers(pip_test; threshold=0.7) == out_rho
         @test outlier_indices(res_dummy; threshold=0.7) == [3]
-        @test cluster_indices(res_dummy, 1; robust=false) == [1, 3]
+        @test robust_cluster_assignments(res_dummy; threshold=0.7, mode=:inactivation_rate) == z_inact
         @test cluster_indices(res_dummy, 1; threshold=0.7, robust=true) == [1]
-        @test cluster_indices(res_dummy, 2; robust=true) == [2]
 
         # Test compute_pi_0 and res_dummy.pi_0
         pi_0_val = compute_pi_0(res_dummy)
@@ -417,66 +423,67 @@ end
         @test res_dummy.pi_0 == pi_0_val
     end
 
-    @testset "Robust Background Calibration & New Margins" begin
-        # 1. Gaussian robust calibration (immunity to severe outliers)
+    @testset "Background Calibration (median-based / smoothed) & New Margins" begin
+        # 1. Gaussian median-based calibration (insensitive to extreme values)
         clean_g = randn(100)
-        corrupted_g = vcat(clean_g, [1000.0, 2000.0]) # Severe outliers
-        g_robust = GaussianMargin(corrupted_g, 2; robust=true)
-        g_naive = GaussianMargin(corrupted_g, 2; robust=false)
-        @test abs(g_robust.mu_bg - median(clean_g)) < 0.5
-        @test g_robust.mu_bg < 5.0 # median is immune
-        @test g_naive.mu_bg > 25.0 # sample mean is corrupted
-        @test g_robust.tau_bg > 0.1 # reasonable precision
+        corrupted_g = vcat(clean_g, [1000.0, 2000.0]) # extreme values
+        g_median = GaussianMargin(corrupted_g, 2; median_based=true)
+        g_mean = GaussianMargin(corrupted_g, 2; median_based=false)
+        @test GaussianMargin(corrupted_g, 2; robust=false).mu_bg == g_mean.mu_bg  # deprecated keyword
+        @test abs(g_median.mu_bg - median(clean_g)) < 0.5
+        @test g_median.mu_bg < 5.0 # median is immune
+        @test g_mean.mu_bg > 25.0 # sample mean is corrupted
+        @test g_median.tau_bg > 0.1 # reasonable precision
 
         # 2. LogNormal Margin
         pos_clean = exp.(randn(100))
         pos_corrupted = vcat(pos_clean, [1e6, 2e6])
-        ln_robust = LogNormalMargin(pos_corrupted, 2; robust=true)
-        @test ln_robust.mu_bg < 5.0
-        @test ln_robust.tau_bg > 0.1
-        eld_ln = NaiveMFLFRMixDClust.expected_log_density(ln_robust, pos_clean[1:5])
+        ln_median = LogNormalMargin(pos_corrupted, 2; median_based=true)
+        @test ln_median.mu_bg < 5.0
+        @test ln_median.tau_bg > 0.1
+        eld_ln = NaiveMFLFRMixDClust.expected_log_density(ln_median, pos_clean[1:5])
         @test size(eld_ln) == (5, 2)
         @test all(isfinite, eld_ln)
-        bld_ln = NaiveMFLFRMixDClust.background_log_density(ln_robust, pos_clean[1:5])
+        bld_ln = NaiveMFLFRMixDClust.background_log_density(ln_median, pos_clean[1:5])
         @test length(bld_ln) == 5
         @test all(isfinite, bld_ln)
 
         # 3. Exponential Margin
         exp_clean = rand(100) .+ 0.1
         exp_corrupted = vcat(exp_clean, [1000.0, 2000.0])
-        exp_robust = ExponentialMargin(exp_corrupted, 2; robust=true)
-        @test exp_robust.lambda_bg > 0.1 # robust rate matching median
-        eld_exp = NaiveMFLFRMixDClust.expected_log_density(exp_robust, exp_clean[1:5])
+        exp_median = ExponentialMargin(exp_corrupted, 2; median_based=true)
+        @test exp_median.lambda_bg > 0.1 # rate matched to the median
+        eld_exp = NaiveMFLFRMixDClust.expected_log_density(exp_median, exp_clean[1:5])
         @test size(eld_exp) == (5, 2)
         @test all(isfinite, eld_exp)
 
-        # 4. Gamma robust calibration
+        # 4. Gamma median-based calibration
         gam_clean = rand(100) .+ 1.0
         gam_corrupted = vcat(gam_clean, [500.0, 1000.0])
-        gam_robust = GammaMargin(gam_corrupted, 2; robust=true)
-        @test gam_robust.a_bg > 0.01
-        @test gam_robust.b_bg > 0.01
+        gam_median = GammaMargin(gam_corrupted, 2; median_based=true)
+        @test gam_median.a_bg > 0.01
+        @test gam_median.b_bg > 0.01
 
-        # 5. Poisson robust calibration
+        # 5. Poisson median-based calibration
         poi_clean = [rand_poisson(3.0) for _ in 1:100]
         poi_corrupted = Float64.(vcat(poi_clean, [500, 1000]))
-        poi_robust = PoissonMargin(poi_corrupted, 2; robust=true)
-        @test poi_robust.lambda_bg < 10.0 # median is immune to 2 massive outliers
+        poi_median = PoissonMargin(poi_corrupted, 2; median_based=true)
+        @test poi_median.lambda_bg < 10.0 # median insensitive to 2 extreme values
 
         # Poisson with zeros (testing trimmed mean fallback)
         poi_zeros = zeros(Float64, 100)
         poi_zeros[95:100] .= 10.0 # mostly zeros, few non-zeros
-        poi_z_margin = PoissonMargin(poi_zeros, 2; robust=true)
+        poi_z_margin = PoissonMargin(poi_zeros, 2; median_based=true)
         @test poi_z_margin.lambda_bg >= 0.1
 
         # 6. Bernoulli Laplace smoothing
         bern_data = [0.0, 0.0, 0.0, 0.0]
-        bern_margin = BernoulliMargin(bern_data, 2; robust=true)
+        bern_margin = BernoulliMargin(bern_data, 2; smoothed=true)
         @test bern_margin.p_bg == (1.0 + 0.0) / (4.0 + 2.0) # 1/6 != 0
 
         # 7. Multinomial symmetric Dirichlet smoothing
         mult_data = [[1, 0, 0], [1, 0, 0], [1, 0, 0]]
-        mult_margin = MultinomialMargin(mult_data, 2; robust=true)
+        mult_margin = MultinomialMargin(mult_data, 2; smoothed=true)
         # Category 2 and 3 should have strictly positive background probability
         @test all(mult_margin.phi_bg .> 0.0)
         @test isapprox(sum(mult_margin.phi_bg), 1.0)

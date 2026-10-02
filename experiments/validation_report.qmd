@@ -202,8 +202,8 @@ and FDR is $0.000$ throughout, confirming that false discovery control is a prop
 the post-hoc EIG filter rather than of the $\bm{\beta}$ estimation step. At very high noise
 ($r = 8$), a numerical gap appears in ARI ($0.974$ vs.\ $0.908$), though with only five
 replications per condition this difference should be interpreted cautiously. The direction is
-nonetheless coherent with the theoretical expectation that iterative re-estimation can be
-contaminated by misclassified observations once noise strongly dominates, biasing the
+nonetheless coherent with the theoretical expectation that iterative re-estimation can
+absorb misclassified observations once noise strongly dominates, pulling the
 background toward cluster means. We therefore adopt the two-stage strategy as the default:
 it is at least equivalent to the iterative strategy across the range tested, entails no
 feedback between background estimation and cluster assignment, and costs less to compute

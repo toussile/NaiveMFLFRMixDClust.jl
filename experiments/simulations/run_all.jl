@@ -13,7 +13,7 @@ include(joinpath(@__DIR__, "01_order_selection.jl"))
 include(joinpath(@__DIR__, "02_heterogeneous_vs_baselines.jl"))
 include(joinpath(@__DIR__, "03_shared_vs_local_saliency.jl"))
 include(joinpath(@__DIR__, "04_high_dimensional_screening.jl"))
-include(joinpath(@__DIR__, "05_outlier_absorption.jl"))
+include(joinpath(@__DIR__, "05_uninformative_absorption.jl"))
 
 function run_all(; n_rep::Int = 10)
     println("==================================================================")
@@ -35,8 +35,8 @@ function run_all(; n_rep::Int = 10)
     println("\n>>> [4/5] Running Simulation 4: High-Dimensional Screening Behavior...")
     res4 = run_high_dimensional_screening(; n_rep = n_rep)
 
-    println("\n>>> [5/5] Running Simulation 5: Outlier Absorption & Robust Clustering...")
-    res5 = run_outlier_absorption(; n_rep = 20)
+    println("\n>>> [5/5] Running Simulation 5: Absorption of Uninformative Observations...")
+    res5 = run_uninformative_absorption(; n_rep = 20)
 
     total_time = time() - t0
     @printf("\nAll simulations completed successfully in %4.2f minutes.\n", total_time / 60.0)

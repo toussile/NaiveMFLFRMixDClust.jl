@@ -12,8 +12,10 @@ mutable struct BernoulliMargin <: AbstractMargin
 end
 
 function BernoulliMargin(y_j::AbstractVector, K::Int;
-                         alpha_0=1.0, beta_0=1.0, robust::Bool=true)
-    p_bg = robust ? (1.0 + sum(y_j)) / (length(y_j) + 2.0) : clamp(mean(y_j), 1e-8, 1.0 - 1e-8)
+                         alpha_0=1.0, beta_0=1.0, smoothed::Bool=true,
+                                                  robust::Union{Nothing, Bool}=nothing)
+    smoothed = _background_flag(smoothed, robust, :smoothed, :BernoulliMargin)
+    p_bg = smoothed ? (1.0 + sum(y_j)) / (length(y_j) + 2.0) : clamp(mean(y_j), 1e-8, 1.0 - 1e-8)
     n     = length(y_j)
     # Spread initial p_k values across [0.05, 0.95] with small jitter, randomly
     # shuffled so cluster ordering is not predetermined.  Pseudo-counts are scaled

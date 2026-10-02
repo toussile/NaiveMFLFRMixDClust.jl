@@ -16,8 +16,10 @@ mutable struct GammaMargin <: AbstractMargin
 end
 
 function GammaMargin(y_j::AbstractVector, K::Int; 
-                     alpha_0=3.0, beta_0=nothing, robust::Bool=true)
-    if robust
+                     alpha_0=3.0, beta_0=nothing, median_based::Bool=true,
+                                                  robust::Union{Nothing, Bool}=nothing)
+    median_based = _background_flag(median_based, robust, :median_based, :GammaMargin)
+    if median_based
         med = Float64(median(y_j))
         mad_val = 1.4826 * Float64(median(abs.(y_j .- med)))
         sigma_bg = mad_val > 1e-6 ? mad_val : (std(y_j) > 1e-6 ? Float64(std(y_j)) : 1.0)

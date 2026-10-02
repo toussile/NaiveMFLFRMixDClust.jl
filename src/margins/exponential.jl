@@ -12,10 +12,12 @@ mutable struct ExponentialMargin <: AbstractMargin
 end
 
 function ExponentialMargin(y_j::AbstractVector, K::Int; 
-                           alpha_0=2.0, beta_0=nothing, robust::Bool=true)
+                           alpha_0=2.0, beta_0=nothing, median_based::Bool=true,
+                                                        robust::Union{Nothing, Bool}=nothing)
+    median_based = _background_flag(median_based, robust, :median_based, :ExponentialMargin)
     any(x -> x < 0, y_j) && throw(ArgumentError("ExponentialMargin requires non-negative observations."))
     
-    if robust
+    if median_based
         med = Float64(median(y_j))
         lambda_bg = log(2.0) / max(med, 1e-4)
     else

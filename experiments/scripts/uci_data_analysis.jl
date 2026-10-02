@@ -4,7 +4,7 @@
 # Reproduces Section 6.2 of the manuscript:
 #   - LFRM clustering on 297 UCI patients with 13 mixed-type features
 #   - Feature saliency via PIP and EHD
-#   - Outlier detection via coordinate inactivation rate
+#   - Uninformative observations via coordinate inactivation rate
 #   - Comparison with binary angiographic disease label (ARI)
 # ==============================================================================
 
@@ -33,7 +33,7 @@ end
 # ──────────────────────────────────────────────────────────────────────────────
 function main()
     println("=" ^ 60)
-    println("  UCI Heart Disease — SFRM Analysis with Outlier Detection")
+    println("  UCI Heart Disease — SFRM Analysis with Uninformative Observations")
     println("=" ^ 60)
 
     # ── Load and preprocess dataset ───────────────────────────────────────────
@@ -71,22 +71,22 @@ function main()
         @printf("    Cluster %d: n=%d (%.1f%%)\n", k, length(idx_k), 100*length(idx_k)/n)
     end
 
-    # ── Outlier detection ─────────────────────────────────────────────────────
+    # ── Uninformative observations ────────────────────────────────────────────────
     rho         = coordinate_inactivation_rate(res)
-    out_idx     = outlier_indices(res; threshold = tau_out)
-    n_outliers  = length(out_idx)
-    z_robust    = robust_cluster_assignments(res; threshold = tau_out)
+    out_idx     = uninformative_indices(res; threshold = tau_out)
+    n_uninf  = length(out_idx)
+    z_ext    = extended_cluster_assignments(res; mode = :inactivation_rate, threshold = tau_out)
     pi0         = compute_pi_0(res)
 
     ari_std     = adjusted_rand_index(labels_true, res.labels)
-    ari_robust  = adjusted_rand_index(labels_true, z_robust)
+    ari_ext  = adjusted_rand_index(labels_true, z_ext)
 
-    println("\n── Outlier Detection (τ=$tau_out) ───────────────────────────────")
-    println("  Flagged as outliers: $n_outliers / $n")
-    if n_outliers > 0 && n_outliers <= 20
-        println("  Outlier indices:     $out_idx")
-    elseif n_outliers > 20
-        println("  Outlier indices:     $(out_idx[1:10])  … ($n_outliers total)")
+    println("\n── Uninformative Observations (τ=$tau_out) ───────────────────────────────")
+    println("  Flagged as uninformative: $n_uninf / $n")
+    if n_uninf > 0 && n_uninf <= 20
+        println("  Uninformative indices:     $out_idx")
+    elseif n_uninf > 20
+        println("  Uninformative indices:     $(out_idx[1:10])  … ($n_uninf total)")
     end
     println("  π₀ (background mass): $(round(pi0, digits=4))")
     println("  ρ̄ (mean CIR):          $(round(mean(rho), digits=4))")
@@ -95,7 +95,7 @@ function main()
     # ── Partition accuracy ────────────────────────────────────────────────────
     println("\n── Partition Accuracy ─────────────────────────────────────────")
     println("  Standard MAP ARI vs. disease label: $(round(ari_std,    digits=4))")
-    println("  Robust MAP ARI vs. disease label:   $(round(ari_robust, digits=4))")
+    println("  Extended MAP ARI vs. disease label:   $(round(ari_ext, digits=4))")
 
     # ── Feature PIPs & EHD ───────────────────────────────────────────────────
     # In LFRM pip is N×J; mean over observations gives a J-vector
@@ -133,20 +133,20 @@ function main()
     scatter_x = dataset[8]   # thalach (standardised)
     scatter_y = dataset[1]   # age (standardised)
 
-    # Build colours: outliers in red, clusters in palette
+    # Build colours: uninformative observations in red, clusters in palette
     palette_cols = [:royalblue, :mediumseagreen, :darkorange, :purple, :sienna]
-    pt_colors = [z_robust[i] == 0 ? C_RED :
-                 palette_cols[mod1(z_robust[i], length(palette_cols))]
+    pt_colors = [z_ext[i] == 0 ? C_RED :
+                 palette_cols[mod1(z_ext[i], length(palette_cols))]
                  for i in 1:n]
-    pt_shapes = [z_robust[i] == 0 ? :x : :circle for i in 1:n]
-    pt_sizes  = [z_robust[i] == 0 ? 6 : 4 for i in 1:n]
+    pt_shapes = [z_ext[i] == 0 ? :x : :circle for i in 1:n]
+    pt_sizes  = [z_ext[i] == 0 ? 6 : 4 for i in 1:n]
 
     p_assign = scatter(scatter_x, scatter_y;
                        color = pt_colors, markershape = pt_shapes,
                        markersize = pt_sizes, markerstrokewidth = 0.5,
                        xlabel = "Max Heart Rate (standardised)",
                        ylabel = "Age (standardised)",
-                       title = "Cluster Assignments (K̂=$K_active, outliers flagged ×)",
+                       title = "Cluster Assignments (K̂=$K_active, uninformative flagged ×)",
                        legend = false,
                        dpi = 300, framestyle = :box, size = (680, 460),
                        margin = 6Plots.mm)
@@ -157,16 +157,16 @@ function main()
                       bins = 30, color = C_BLUE, linecolor = :white, alpha = 0.8,
                       xlabel = "Coordinate Inactivation Rate ρ̄ᵢ",
                       ylabel = "Count",
-                      title = "Outlier Detection — UCI Heart Disease",
+                      title = "Uninformative Observations — UCI Heart Disease",
                       label = "patients", legend = :topright,
                       dpi = 300, framestyle = :box, size = (640, 380), margin = 6Plots.mm)
     vline!(p_rho, [tau_out]; line = (2, :dash, C_RED), label = "τ = $tau_out")
-    if n_outliers > 0
-        scatter!(p_rho, rho[out_idx], zeros(n_outliers) .+ 0.3;
+    if n_uninf > 0
+        scatter!(p_rho, rho[out_idx], zeros(n_uninf) .+ 0.3;
                  color = C_RED, markershape = :dtriangle, markersize = 6,
-                 label = "$n_outliers flagged")
+                 label = "$n_uninf flagged")
     end
-    savefig_named(p_rho, "outliers")
+    savefig_named(p_rho, "uninformative")
 
     println("\n" * "=" ^ 60)
     println("  Analysis complete. Figures saved to: $FIGURES_DIR")
@@ -175,8 +175,8 @@ function main()
     return (
         K_active    = K_active,
         ari_std     = ari_std,
-        ari_robust  = ari_robust,
-        n_outliers  = n_outliers,
+        ari_ext  = ari_ext,
+        n_uninf  = n_uninf,
         pi0         = pi0,
         rho_mean    = mean(rho),
         rho_max     = maximum(rho),

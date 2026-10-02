@@ -18,13 +18,15 @@ end
 
 function LogNormalMargin(y_j::AbstractVector, K::Int; 
                          mu_0=nothing, kappa_0=0.05, a_0=3.0, b_0=nothing,
-                         robust::Bool=true)
+                         median_based::Bool=true,
+                         robust::Union{Nothing, Bool}=nothing)
+    median_based = _background_flag(median_based, robust, :median_based, :LogNormalMargin)
     # Check positivity
     any(x -> x <= 0, y_j) && throw(ArgumentError("LogNormalMargin requires strictly positive observations."))
     
     z_j = log.(Float64.(y_j))
     
-    if robust
+    if median_based
         med = Float64(median(z_j))
         mad_val = 1.4826 * Float64(median(abs.(z_j .- med)))
         sigma_bg = mad_val > 1e-6 ? mad_val : (std(z_j) > 1e-6 ? Float64(std(z_j)) : 1.0)

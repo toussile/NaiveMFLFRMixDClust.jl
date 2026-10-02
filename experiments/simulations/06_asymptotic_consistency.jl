@@ -1,17 +1,17 @@
 # ==============================================================================
-# 06_asymptotic_consistency.jl — Asymptotic Consistency and Modular Robust Assignment
+# 06_asymptotic_consistency.jl — Asymptotic Consistency and Modular Extended Assignment
 # ==============================================================================
 # Evaluates in-model cluster contraction and partition recovery across sample sizes:
 #   n ∈ {50, 80, 120, 200, 250, 300, 400}
 # with u⁽⁰⁾ = 0.001, K_fit = 12, true K₀ = 3, p_act = 16, p_noise = 64.
-# Contrasts Standard MAP classification vs. Modular Robust Assignment (outlier rejection).
+# Contrasts Standard MAP classification vs. Modular Extended Assignment (background class 0).
 # Reproduces Table S6.2 and Figures: consistency_k.png & consistency_ari.png.
 # ==============================================================================
 
 include(joinpath(@__DIR__, "common.jl"))
 
 function run_asymptotic_consistency(; n_rep::Int = DEFAULT_N_REP)
-    @info "Starting Simulation: Asymptotic Consistency & Robust Assignment (n_rep = $n_rep)"
+    @info "Starting Simulation: Asymptotic Consistency & Extended Assignment (n_rep = $n_rep)"
 
     n_grid = [50, 80, 120, 200, 250, 300, 400]
     K0, K_fit = 3, 12
@@ -43,15 +43,15 @@ function run_asymptotic_consistency(; n_rep::Int = DEFAULT_N_REP)
             k_std_vals[rep]  = map_cluster_order(res)
             ari_std_vals[rep] = adjusted_rand_index(true_z, res.labels)
 
-            # 2. Modular Post-Hoc Robust Assignment (via effective responsibility >= 2%)
+            # 2. Modular Post-Hoc Extended Assignment (via effective responsibility >= 2%)
             w = res.w
             eff_clusters = findall(k -> sum(w[:, k]) / n >= 0.02, 1:size(w, 2))
             k_rob_vals[rep] = length(eff_clusters)
-            z_rob = zeros(Int, n)
+            z_ext = zeros(Int, n)
             for i in 1:n
-                z_rob[i] = eff_clusters[argmax(w[i, eff_clusters])]
+                z_ext[i] = eff_clusters[argmax(w[i, eff_clusters])]
             end
-            ari_rob_vals[rep] = adjusted_rand_index(true_z, z_rob)
+            ari_rob_vals[rep] = adjusted_rand_index(true_z, z_ext)
 
             time_vals[rep]   = t_elapsed
         end
@@ -97,7 +97,7 @@ function run_asymptotic_consistency(; n_rep::Int = DEFAULT_N_REP)
               legend = :topright, ylims = (2.0, 5.0), grid = true)
     plot!(p1, n_vals, k_rob_means; yerror = k_rob_stds,
           marker = :diamond, lw = 2, ms = 5, ls = :dash,
-          color = :darkcyan, label = "Robust Assignment (K̂)")
+          color = :darkcyan, label = "Extended Assignment (K̂)")
     hline!(p1, [K0]; label = "True K₀ = 3", ls = :dot, lw = 2, color = :crimson)
     savefig(p1, joinpath(FIGURES_DIR, "consistency_k.png"))
 
@@ -111,14 +111,14 @@ function run_asymptotic_consistency(; n_rep::Int = DEFAULT_N_REP)
               legend = :bottomright, ylims = (0.85, 1.01), grid = true)
     plot!(p2, n_vals, ari_rob_means; yerror = ari_rob_stds,
           marker = :star5, lw = 2, ms = 5, ls = :dash,
-          color = :teal, label = "Robust Assignment (ARI)")
+          color = :teal, label = "Extended Assignment (ARI)")
     savefig(p2, joinpath(FIGURES_DIR, "consistency_ari.png"))
 
     # Print LaTeX Table
     println("\n=== LaTeX Table S6.2 Output ===")
     println("\\begin{tabular}{ccccc}")
     println("\\toprule")
-    println("Sample Size \$n\$ & \$\\widehat{K}\$ (Standard MAP) & ARI (Standard MAP) & \$\\widehat{K}\$ (Robust) & ARI (Robust) \\\\")
+    println("Sample Size \$n\$ & \$\\widehat{K}\$ (Standard MAP) & ARI (Standard MAP) & \$\\widehat{K}\$ (Extended) & ARI (Extended) \\\\")
     println("\\midrule")
     for r in results
         @printf("%3d & \$%3.1f \\pm %4.2f\$ & \$%5.3f \\pm %5.3f\$ & \$%3.1f \\pm %4.2f\$ & \$%5.3f \\pm %5.3f\$ \\\\\n",

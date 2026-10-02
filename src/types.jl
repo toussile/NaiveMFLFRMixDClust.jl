@@ -86,7 +86,7 @@ results = mixClust(dataset, 10)
 
 K_hat  = results.n_clusters           # estimated number of clusters
 labels = results.labels                # hard assignments
-rho    = results.inactivation_rate     # anomaly / outlier indicator
+rho    = results.inactivation_rate     # high values: uninformative observation
 eig    = compute_eig(results.margins, results.w, results.pip)
 ```
 """

@@ -5,7 +5,7 @@
 # simulate_synthetic_cohort() from NaiveMFLFRMixDClust.jl:
 #   - 7 mixed-type features (Gaussian ×2, Poisson, Gamma, Multinomial, noise ×2)
 #   - 3 clinical subtypes, n = 200 patients
-#   - LFRM with order selection, outlier detection, and predictive validation
+#   - LFRM with order selection, uninformative observations, and predictive validation
 # ==============================================================================
 
 using Pkg
@@ -31,7 +31,7 @@ function main()
     K_fit = 10
     u0    = 0.005
     tau     = 0.20    # EHD selection threshold
-    tau_out = 0.55    # CIR outlier threshold
+    tau_out = 0.55    # CIR threshold for uninformative observations
 
     # ── Generate dataset via built-in function ─────────────────────────────────
     cohort        = simulate_synthetic_cohort(; n = n, seed = 789)
@@ -62,10 +62,10 @@ function main()
     println("  CAVI iterations: $(length(res_train.elbo_history))")
     println("  Active clusters K̂ (train): $K_train")
 
-    # ── Outlier detection on training set ─────────────────────────────────────
+    # ── Uninformative observations on training set ─────────────────────────────────────
     rho_train  = coordinate_inactivation_rate(res_train)
-    out_idx_tr = outlier_indices(res_train; threshold = tau_out)
-    println("  Flagged as outliers (τ=$tau_out): $(length(out_idx_tr)) / $n_train")
+    out_idx_tr = uninformative_indices(res_train; threshold = tau_out)
+    println("  Flagged as uninformative (τ=$tau_out): $(length(out_idx_tr)) / $n_train")
 
     # ── Out-of-sample predictive validation ───────────────────────────────────
     println("\n── Out-of-Sample Validation (n_test=$(length(test_idx))) ──────────")
@@ -93,22 +93,22 @@ function main()
         @printf("    Cluster %d: n=%d (%.1f%%)\n", k, length(idx_k), 100*length(idx_k)/n)
     end
 
-    # ── Outlier detection on full dataset ─────────────────────────────────────
+    # ── Uninformative observations on full dataset ─────────────────────────────────────
     rho_full     = coordinate_inactivation_rate(res_full)
-    out_idx_full = outlier_indices(res_full; threshold = tau_out)
-    n_outliers   = length(out_idx_full)
-    z_robust     = robust_cluster_assignments(res_full; threshold = tau_out)
+    out_idx_full = uninformative_indices(res_full; threshold = tau_out)
+    n_uninf   = length(out_idx_full)
+    z_ext     = extended_cluster_assignments(res_full; mode = :inactivation_rate, threshold = tau_out)
     pi0          = compute_pi_0(res_full)
 
     full_ari_std    = adjusted_rand_index(true_z, res_full.labels)
-    full_ari_robust = adjusted_rand_index(true_z, z_robust)
+    full_ari_ext = adjusted_rand_index(true_z, z_ext)
 
-    println("\n── Outlier Detection (τ=$tau_out) ───────────────────────────────")
-    println("  Flagged as outliers: $n_outliers / $n")
+    println("\n── Uninformative Observations (τ=$tau_out) ───────────────────────────────")
+    println("  Flagged as uninformative: $n_uninf / $n")
     println("  π₀ (background mass): $(round(pi0, digits=4))")
     println("  ρ̄ (mean CIR):          $(round(mean(rho_full), digits=4))")
     println("  Standard MAP ARI:      $(round(full_ari_std,    digits=4))")
-    println("  Robust MAP ARI:        $(round(full_ari_robust, digits=4))")
+    println("  Extended MAP ARI:        $(round(full_ari_ext, digits=4))")
 
     # ── Feature PIPs and EHD ──────────────────────────────────────────────────
     pip_means = vec(mean(res_full.pip, dims = 1))
@@ -161,10 +161,10 @@ function main()
                                 size   = (640, 420), margin = 5Plots.mm)
     savefig_named(p_assign, "assignments")
 
-    # Assignment confidence + outlier flags
+    # Assignment confidence + uninformative flags
     p_conf = plot_assignment_confidence(res_full;
                                         tau_out = tau_out,
-                                        title   = "Assignment Confidence & Outlier Flags",
+                                        title   = "Assignment Confidence & Uninformative Flags",
                                         dpi     = 300, framestyle = :box,
                                         size    = (700, 350), margin = 5Plots.mm)
     savefig_named(p_conf, "confidence")
@@ -186,10 +186,10 @@ function main()
         K_full          = K_full,
         elbo_final      = elbo_final,
         full_ari_std    = full_ari_std,
-        full_ari_robust = full_ari_robust,
+        full_ari_ext = full_ari_ext,
         test_ari        = test_ari,
         test_ll         = test_ll,
-        n_outliers      = n_outliers,
+        n_uninf      = n_uninf,
         pi0             = pi0,
         pip_means       = pip_means,
         ehd_means       = ehd_means,

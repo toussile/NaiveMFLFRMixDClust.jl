@@ -10,7 +10,9 @@ mutable struct MultinomialMargin <: AbstractMargin
 end
 
 function MultinomialMargin(y_j::AbstractVector, K::Int; 
-                           varphi=nothing, robust::Bool=true)
+                           varphi=nothing, smoothed::Bool=true,
+                                           robust::Union{Nothing, Bool}=nothing)
+    smoothed = _background_flag(smoothed, robust, :smoothed, :MultinomialMargin)
     n = length(y_j)
     C_j = length(y_j[1])
     
@@ -20,7 +22,7 @@ function MultinomialMargin(y_j::AbstractVector, K::Int;
         sum_y .+= y_j[i]
     end
     total_counts = sum(sum_y)
-    if robust
+    if smoothed
         phi_bg = (sum_y .+ 0.5) ./ (total_counts + 0.5 * C_j)
     else
         phi_bg = total_counts > 0 ? sum_y ./ total_counts : fill(1.0 / C_j, C_j)

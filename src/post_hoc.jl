@@ -418,18 +418,8 @@ end
 
 coordinate_inactivation_rate(results::MixClustResult) = coordinate_inactivation_rate(results.pip)
 
-"""
-    detect_outliers(results::MixClustResult; threshold::Real=0.55, mode::Symbol=:inactivation_rate) -> BitVector
-    detect_outliers(pip::AbstractMatrix; threshold::Real=0.55, mode::Symbol=:inactivation_rate) -> BitVector
-
-Identifies observations as background outliers/anomalies based on coordinate inactivation.
-
-# Modes
-- `:inactivation_rate` (default): Flags observations with \$\\bar{\\rho}_i \\ge \\text{threshold}\$.
-- `:map_strict`: Flags observations whose joint MAP feature selection profile is the null vector \$\\bm{s}_i = \\bm{0}_p\$ (i.e. \$\\varphi_{i,j}^* < 0.5\$ for all \$j = 1, \\dots, p\$).
-- `:map_relaxed`: Flags observations where the fraction of inactive coordinates (\$\\varphi_{i,j}^* < 0.5\$) is \$\\ge \\text{threshold}\$.
-"""
-function detect_outliers(pip::AbstractMatrix; threshold::Real=0.55, mode::Symbol=:inactivation_rate)
+# Flagging rule shared by the public detection functions.
+function _flag_uninformative(pip::AbstractMatrix; threshold::Real, mode::Symbol)
     n, p = size(pip)
     if mode === :inactivation_rate
         rho = coordinate_inactivation_rate(pip)
@@ -447,12 +437,9 @@ function detect_outliers(pip::AbstractMatrix; threshold::Real=0.55, mode::Symbol
         end
         return out
     else
-        throw(ArgumentError("Unknown outlier detection mode: \$mode. Choose from :inactivation_rate, :map_strict, :map_relaxed"))
+        throw(ArgumentError("Unknown detection mode: $mode. Choose from :inactivation_rate, :map_strict, :map_relaxed"))
     end
 end
-
-detect_outliers(results::MixClustResult; threshold::Real=0.55, mode::Symbol=:inactivation_rate) =
-    detect_outliers(results.pip; threshold=threshold, mode=mode)
 
 """
     calibrate_tau_inact(pip::AbstractMatrix, pi_0::Real; min_threshold::Real=0.50) -> Float64
@@ -477,9 +464,18 @@ end
 """
     detect_uninformative_observations(results::MixClustResult; threshold::Union{Real, Symbol}=:auto, min_threshold::Real=0.50, mode::Symbol=:inactivation_rate) -> BitVector
     detect_uninformative_observations(pip::AbstractMatrix, pi_0::Real; threshold::Union{Real, Symbol}=:auto, min_threshold::Real=0.50, mode::Symbol=:inactivation_rate) -> BitVector
+    detect_uninformative_observations(pip::AbstractMatrix; threshold::Real=0.55, mode::Symbol=:inactivation_rate) -> BitVector
 
 Identifies observations belonging to the uninformative background class (\$z_i = 0\$).
-When `threshold=:auto`, it dynamically calibrates \$\\tau_{\\mathrm{inact}}\$ using `calibrate_tau_inact`.
+When `threshold=:auto`, it dynamically calibrates \$\\tau_{\\mathrm{inact}}\$ using `calibrate_tau_inact`
+(this requires \$\\bar{\\pi}_0\$, so the method taking only `pip` needs a numeric threshold).
+
+# Modes
+- `:inactivation_rate` (default): flags observations with \$\\bar{\\rho}_i \\ge \\text{threshold}\$.
+- `:map_strict`: flags observations whose joint MAP activation profile is the null vector
+  \$\\bm{s}_i = \\bm{0}_p\$ (i.e. \$\\varphi_{i,j}^* < 0.5\$ for all \$j\$).
+- `:map_relaxed`: flags observations whose fraction of inactive coordinates
+  (\$\\varphi_{i,j}^* < 0.5\$) is \$\\ge \\text{threshold}\$.
 """
 function detect_uninformative_observations(pip::AbstractMatrix, pi_0::Real; threshold::Union{Real, Symbol}=:auto, min_threshold::Real=0.50, mode::Symbol=:inactivation_rate)
     thresh_val = if threshold === :auto
@@ -487,8 +483,11 @@ function detect_uninformative_observations(pip::AbstractMatrix, pi_0::Real; thre
     else
         Float64(threshold)
     end
-    return detect_outliers(pip; threshold=thresh_val, mode=mode)
+    return _flag_uninformative(pip; threshold=thresh_val, mode=mode)
 end
+
+detect_uninformative_observations(pip::AbstractMatrix; threshold::Real=0.55, mode::Symbol=:inactivation_rate) =
+    _flag_uninformative(pip; threshold=threshold, mode=mode)
 
 function detect_uninformative_observations(results::MixClustResult; threshold::Union{Real, Symbol}=:auto, min_threshold::Real=0.50, mode::Symbol=:inactivation_rate)
     pi_0 = compute_pi_0(results)
@@ -564,8 +563,6 @@ function extended_cluster_assignments(results::MixClustResult; mode::Symbol=:map
     end
 end
 
-# Canonical aliases
-const robust_cluster_assignments = extended_cluster_assignments
 
 
 """
@@ -609,23 +606,58 @@ function compute_pi_0(results::MixClustResult)
 end
 
 """
-    outlier_indices(results::MixClustResult; threshold::Real=0.55, mode::Symbol=:inactivation_rate) -> Vector{Int}
+    uninformative_indices(results::MixClustResult; threshold::Union{Real, Symbol}=:auto, min_threshold::Real=0.50, mode::Symbol=:inactivation_rate) -> Vector{Int}
 
-Return indices of observations flagged as background outliers.
+Return the indices of observations flagged as uninformative (background class 0);
+see [`detect_uninformative_observations`](@ref).
 """
-function outlier_indices(results::MixClustResult; threshold::Real=0.55, mode::Symbol=:inactivation_rate)
-    return findall(detect_outliers(results; threshold=threshold, mode=mode))
+function uninformative_indices(results::MixClustResult; threshold::Union{Real, Symbol}=:auto,
+                               min_threshold::Real=0.50, mode::Symbol=:inactivation_rate)
+    return findall(detect_uninformative_observations(results; threshold=threshold,
+                                                     min_threshold=min_threshold, mode=mode))
 end
 
 """
-    cluster_indices(results::MixClustResult, k::Int; threshold::Real=0.55, robust::Bool=false) -> Vector{Int}
+    cluster_indices(results::MixClustResult, k::Int; threshold::Real=0.55, exclude_uninformative::Bool=false) -> Vector{Int}
 
 Return indices of observations assigned to cluster `k`.
-If `robust=true`, background outliers (under `threshold`) are excluded.
+If `exclude_uninformative=true`, observations whose coordinate inactivation rate is
+\$\\bar{\\rho}_i \\ge\$ `threshold` (uninformative, background class 0) are excluded.
 """
-function cluster_indices(results::MixClustResult, k::Int; threshold::Real=0.55, robust::Bool=false)
-    assignments = robust ? robust_cluster_assignments(results; threshold=threshold) : results.labels
+function cluster_indices(results::MixClustResult, k::Int; threshold::Real=0.55,
+                         exclude_uninformative::Bool=false, robust::Union{Nothing, Bool}=nothing)
+    if robust !== nothing
+        Base.depwarn("`cluster_indices(...; robust=...)` is deprecated, use `exclude_uninformative=...`.",
+                     :cluster_indices)
+        exclude_uninformative = robust
+    end
+    assignments = exclude_uninformative ?
+        extended_cluster_assignments(results; mode=:inactivation_rate, threshold=threshold) :
+        results.labels
     return findall(==(k), assignments)
+end
+
+# ── Deprecated names (removed in a future release) ────────────────────────────
+
+function detect_outliers(pip::AbstractMatrix; threshold::Real=0.55, mode::Symbol=:inactivation_rate)
+    Base.depwarn("`detect_outliers` is deprecated, use `detect_uninformative_observations`.", :detect_outliers)
+    return detect_uninformative_observations(pip; threshold=threshold, mode=mode)
+end
+
+function detect_outliers(results::MixClustResult; threshold::Real=0.55, mode::Symbol=:inactivation_rate)
+    Base.depwarn("`detect_outliers` is deprecated, use `detect_uninformative_observations`.", :detect_outliers)
+    return detect_uninformative_observations(results; threshold=threshold, mode=mode)
+end
+
+function outlier_indices(results::MixClustResult; threshold::Real=0.55, mode::Symbol=:inactivation_rate)
+    Base.depwarn("`outlier_indices` is deprecated, use `uninformative_indices`.", :outlier_indices)
+    return uninformative_indices(results; threshold=threshold, mode=mode)
+end
+
+function robust_cluster_assignments(results::MixClustResult; kwargs...)
+    Base.depwarn("`robust_cluster_assignments` is deprecated, use `extended_cluster_assignments`.",
+                 :robust_cluster_assignments)
+    return extended_cluster_assignments(results; kwargs...)
 end
 
 
